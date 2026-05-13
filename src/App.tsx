@@ -6,7 +6,10 @@ import UsersSection from "@/components/UsersSection";
 import HoldingSection from "@/components/HoldingSection";
 import Icon from "@/components/ui/icon";
 import type { Section, Location, Post, FineRecord, FineReason } from "@/types";
-import { exportFinesPDF, exportFinesExcel, type FinesReportData } from "@/lib/export";
+import {
+  exportFinesPDF, exportFinesExcel, type FinesReportData,
+  exportPDF, exportExcel, type ExportReportData,
+} from "@/lib/export";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const TYPE_LABELS = { office: "Офис / БЦ", warehouse: "Склад", retail: "Торговый объект", industrial: "Промышленный", residential: "Жилой комплекс" } as const;
@@ -647,25 +650,290 @@ function Schedule() {
   );
 }
 
+// ─── Reports helpers (shared with Reports component) ──────────────────────────
+function useReportBuilders() {
+  const { fines, employees, posts, locations, fineReasons, currentOrg, holding, allLocations, allEmployees, allPosts, allFines, orgs } = useApp();
+
+  const today = new Date().toLocaleDateString("ru-RU");
+
+  // ── Fines report data ─────────────────────────────────────────────────────
+  const buildFinesData = (empFilter: number | "all" = "all"): FinesReportData => {
+    const filterLabel = empFilter === "all" ? "Все сотрудники" : employees.find(e => e.id === empFilter)?.name ?? "—";
+    const filtered = empFilter === "all" ? fines : fines.filter(f => f.employeeId === empFilter);
+    const sorted = [...filtered].sort((a, b) => b.date.localeCompare(a.date));
+    const rows = sorted.map(f => {
+      const emp = employees.find(e => e.id === f.employeeId);
+      const post = posts.find(p => p.id === f.postId);
+      const loc = post ? locations.find(l => l.id === post.locationId) : null;
+      const reason = fineReasons.find(r => r.id === f.reasonId);
+      return {
+        date: fmtDate(f.date), employeeName: emp?.name ?? "—", rank: emp?.rank ?? "—",
+        postName: post?.name ?? "—", locationName: loc?.name ?? "—",
+        reasonLabel: reason?.label ?? "—", note: f.note, amount: f.amount,
+      };
+    });
+    const byEmployee = employees
+      .map(e => ({ name: e.name, rank: e.rank, count: sorted.filter(f => f.employeeId === e.id).length, total: sorted.filter(f => f.employeeId === e.id).reduce((s, f) => s + f.amount, 0) }))
+      .filter(x => x.count > 0).sort((a, b) => b.total - a.total);
+    return {
+      orgName: currentOrg?.name ?? "—", orgColor: currentOrg?.color ?? "#6366f1",
+      holdingName: holding.name, generatedAt: today, filterLabel, rows, byEmployee,
+      totalAmount: sorted.reduce((s, f) => s + f.amount, 0), totalCount: sorted.length,
+    };
+  };
+
+  // ── Consolidated (holding) report data ────────────────────────────────────
+  const synth = (orgId: number, mi: number) => {
+    const seed = orgId * 13 + mi * 7;
+    return { coverage: 70 + ((seed * 3) % 28), attendance: 80 + ((seed * 5) % 18), incidents: seed % 4, finesAmt: (seed % 4) * (300 + (seed % 5) * 400), hoursWorked: ([8, 2, 1][orgId - 1] ?? 3) * 22 * 12 + (seed % 50) };
+  };
+  const months = Array.from({ length: 6 }, (_, i) => {
+    const d = new Date(2026, 4 - (5 - i), 1);
+    return { key: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`, label: d.toLocaleDateString("ru-RU", { month: "short", year: "2-digit" }) };
+  });
+
+  const buildConsolidatedData = (period: string): ExportReportData => {
+    const summaryRows = orgs.map(org => {
+      const yearData = months.map((_, mi) => {
+        const d = synth(org.id, mi);
+        const realFines = allFines.filter(f => f.orgId === org.id && f.date.startsWith(months[mi].key));
+        return { ...d, finesAmt: realFines.length > 0 ? realFines.reduce((s, f) => s + f.amount, 0) : d.finesAmt, incidents: realFines.length > 0 ? realFines.length : d.incidents };
+      });
+      const avgCov = Math.round(yearData.reduce((a, d) => a + d.coverage, 0) / yearData.length);
+      const avgAtt = Math.round(yearData.reduce((a, d) => a + d.attendance, 0) / yearData.length);
+      const totInc = yearData.reduce((a, d) => a + d.incidents, 0);
+      const totFines = yearData.reduce((a, d) => a + d.finesAmt, 0);
+      const totHours = yearData.reduce((a, d) => a + d.hoursWorked, 0);
+      const score = Math.round(avgCov * 0.4 + avgAtt * 0.4 + Math.max(0, 100 - totInc * 10) * 0.2);
+      return { orgName: org.name, orgColor: org.color, coverage: avgCov, attendance: avgAtt, incidents: totInc, finesAmt: totFines, hoursWorked: totHours, score, grade: score >= 90 ? "A" : score >= 75 ? "B" : "C" };
+    });
+    const totalCoverage = Math.round(summaryRows.reduce((s, r) => s + r.coverage, 0) / Math.max(summaryRows.length, 1));
+    const totalAttendance = Math.round(summaryRows.reduce((s, r) => s + r.attendance, 0) / Math.max(summaryRows.length, 1));
+    const monthlyRows = orgs.map(org => {
+      const rows = months.map((m, mi) => {
+        const d = synth(org.id, mi);
+        const realFines = allFines.filter(f => f.orgId === org.id && f.date.startsWith(m.key));
+        return { coverage: d.coverage, attendance: d.attendance, incidents: realFines.length > 0 ? realFines.length : d.incidents, finesAmt: realFines.length > 0 ? realFines.reduce((s, f) => s + f.amount, 0) : d.finesAmt };
+      });
+      return { orgName: org.name, coverage: rows.map(r => r.coverage), attendance: rows.map(r => r.attendance), incidents: rows.map(r => r.incidents), finesAmt: rows.map(r => r.finesAmt) };
+    });
+    return {
+      holdingName: holding.name, inn: holding.inn, generatedAt: today, period,
+      summaryRows, monthLabels: months.map(m => m.label), monthlyRows,
+      totalCoverage, totalAttendance,
+      totalIncidents: summaryRows.reduce((s, r) => s + r.incidents, 0),
+      totalFines: summaryRows.reduce((s, r) => s + r.finesAmt, 0),
+      totalHours: summaryRows.reduce((s, r) => s + r.hoursWorked, 0),
+    };
+  };
+
+  // ── Shifts summary (as fines-style with employees/posts) ──────────────────
+  const buildShiftsData = (): FinesReportData => {
+    const activeEmps = employees.filter(e => e.status === "active");
+    const rows = activeEmps.map(e => {
+      const post = posts.find(p => p.officerId === e.id);
+      const loc = post ? locations.find(l => l.id === post.locationId) : null;
+      return { date: today, employeeName: e.name, rank: e.rank, postName: post?.name ?? "—", locationName: loc?.name ?? "—", reasonLabel: "На смене", note: e.shift, amount: 0 };
+    });
+    return {
+      orgName: currentOrg?.name ?? "—", orgColor: currentOrg?.color ?? "#6366f1",
+      holdingName: holding.name, generatedAt: today, filterLabel: "Все смены",
+      rows, byEmployee: [], totalAmount: 0, totalCount: rows.length,
+    };
+  };
+
+  return { buildFinesData, buildConsolidatedData, buildShiftsData, today };
+}
+
 function Reports() {
-  const reports = [
-    { title: "Сводка за апрель 2026", date: "27.04.2026", type: "Месячный" },
-    { title: "Отчёт по штрафам — апрель", date: "30.04.2026", type: "Штрафы" },
-    { title: "Инцидент — Ворота въезда", date: "25.04.2026", type: "Инцидент" },
-    { title: "Смены — 3я неделя апреля", date: "21.04.2026", type: "Еженедельный" },
+  const { currentOrg, fines, employees, posts } = useApp();
+  const { buildFinesData, buildConsolidatedData, buildShiftsData } = useReportBuilders();
+
+  const [generating, setGenerating] = useState<string | null>(null);
+
+  const handle = async (id: string, fn: () => void) => {
+    setGenerating(id);
+    await new Promise(r => setTimeout(r, 100));
+    fn();
+    setGenerating(null);
+  };
+
+  const finesCount = fines.length;
+  const empCount = employees.filter(e => e.status === "active").length;
+  const postsCovered = posts.filter(p => p.status === "covered").length;
+  const today = new Date().toLocaleDateString("ru-RU");
+
+  type ReportDef = {
+    id: string;
+    title: string;
+    description: string;
+    icon: string;
+    iconBg: string;
+    iconColor: string;
+    badge?: string;
+    stat: string;
+    statLabel: string;
+    formats: { fmt: "pdf" | "xlsx"; label: string; icon: string; desc: string }[];
+  };
+
+  const REPORT_DEFS: ReportDef[] = [
+    {
+      id: "fines",
+      title: "Отчёт по штрафам",
+      description: "Полная история нарушений, топ нарушителей, разбивка по причинам",
+      icon: "BadgeAlert", iconBg: "bg-red-500/10", iconColor: "text-red-400",
+      badge: finesCount > 0 ? `${finesCount} записей` : undefined,
+      stat: String(finesCount), statLabel: "нарушений",
+      formats: [
+        { fmt: "pdf", label: "PDF", icon: "FileText", desc: "Документ с брендингом" },
+        { fmt: "xlsx", label: "Excel", icon: "Table", desc: "3 листа: история, сотрудники, причины" },
+      ],
+    },
+    {
+      id: "consolidated",
+      title: "Сводный отчёт холдинга",
+      description: "KPI всех организаций, покрытие постов, явка, сравнительный рейтинг",
+      icon: "BarChart3", iconBg: "bg-primary/10", iconColor: "text-primary",
+      stat: `${Math.round((postsCovered / Math.max(posts.length, 1)) * 100)}%`, statLabel: "покрытие сейчас",
+      formats: [
+        { fmt: "pdf", label: "PDF", icon: "FileText", desc: "Многостраничный с KPI" },
+        { fmt: "xlsx", label: "Excel", icon: "Table", desc: "5 листов: сводка + динамика" },
+      ],
+    },
+    {
+      id: "shifts",
+      title: "Отчёт по сменам",
+      description: "Текущие расстановки, кто на смене, занятые и вакантные посты",
+      icon: "CalendarDays", iconBg: "bg-emerald-500/10", iconColor: "text-emerald-400",
+      stat: String(empCount), statLabel: "на смене сейчас",
+      formats: [
+        { fmt: "pdf", label: "PDF", icon: "FileText", desc: "Список дежурных по объектам" },
+        { fmt: "xlsx", label: "Excel", icon: "Table", desc: "Таблица расстановки" },
+      ],
+    },
   ];
+
+  const onExport = (reportId: string, fmt: "pdf" | "xlsx") => {
+    const key = `${reportId}-${fmt}`;
+    if (reportId === "fines") {
+      handle(key, () => {
+        const data = buildFinesData();
+        if (fmt === "pdf") { exportFinesPDF(data); } else { exportFinesExcel(data); }
+      });
+    } else if (reportId === "consolidated") {
+      handle(key, () => {
+        const data = buildConsolidatedData("Январь — Май 2026");
+        if (fmt === "pdf") { exportPDF(data); } else { exportExcel(data); }
+      });
+    } else if (reportId === "shifts") {
+      handle(key, () => {
+        const data = buildShiftsData();
+        if (fmt === "pdf") { exportFinesPDF(data); } else { exportFinesExcel(data); }
+      });
+    }
+  };
+
   return (
     <div className="section-enter space-y-6">
-      <div className="flex items-center justify-between"><div><h2 className="text-2xl font-bold text-foreground">Отчёты</h2><p className="text-muted-foreground text-sm mt-1">Сформированные отчёты</p></div><button className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:opacity-90"><Icon name="Plus" size={16} /> Новый отчёт</button></div>
-      <div className="bg-card border border-border rounded-xl divide-y divide-border/50">
-        {reports.map((r, i) => (
-          <div key={i} className="flex items-center gap-4 px-5 py-4 hover:bg-muted/20 transition-colors">
-            <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${r.type === "Штрафы" ? "bg-red-500/10" : "bg-primary/10"}`}><Icon name={r.type === "Штрафы" ? "BadgeAlert" : "FileText"} size={18} className={r.type === "Штрафы" ? "text-red-400" : "text-primary"} /></div>
-            <div className="flex-1 min-w-0"><p className="font-medium text-foreground text-sm">{r.title}</p><p className="text-xs text-muted-foreground mt-0.5">{r.date} · {r.type}</p></div>
-            <span className="badge-active hidden sm:inline-flex">Готов</span>
-            <button className="p-2 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground"><Icon name="Download" size={16} /></button>
+      {/* Header */}
+      <div>
+        <h2 className="text-2xl font-bold text-foreground">Отчёты</h2>
+        <p className="text-muted-foreground text-sm mt-1">
+          {currentOrg?.shortName} · Генерация и скачивание документов
+        </p>
+      </div>
+
+      {/* Status strip */}
+      <div className="flex flex-wrap gap-3">
+        {[
+          { label: "Данные актуальны на", val: today, icon: "Clock" },
+          { label: "Организация", val: currentOrg?.shortName ?? "—", icon: "Building2" },
+          { label: "На смене", val: `${empCount} чел.`, icon: "UserCheck" },
+          { label: "Покрытие постов", val: `${Math.round((postsCovered / Math.max(posts.length, 1)) * 100)}%`, icon: "ShieldCheck" },
+        ].map(s => (
+          <div key={s.label} className="flex items-center gap-2 px-4 py-2 bg-card border border-border rounded-xl">
+            <Icon name={s.icon} size={14} className="text-muted-foreground shrink-0" />
+            <span className="text-xs text-muted-foreground">{s.label}:</span>
+            <span className="text-xs font-semibold text-foreground">{s.val}</span>
           </div>
         ))}
+      </div>
+
+      {/* Report cards */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+        {REPORT_DEFS.map(rep => (
+          <div key={rep.id} className="bg-card border border-border rounded-2xl overflow-hidden flex flex-col">
+            {/* Card header */}
+            <div className="p-5 border-b border-border">
+              <div className="flex items-start gap-3 mb-3">
+                <div className={`w-10 h-10 rounded-xl ${rep.iconBg} flex items-center justify-center shrink-0`}>
+                  <Icon name={rep.icon} size={20} className={rep.iconColor} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="font-bold text-foreground text-sm leading-tight">{rep.title}</h3>
+                    {rep.badge && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-red-500/15 text-red-400 border border-red-500/20 font-mono shrink-0">{rep.badge}</span>
+                    )}
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-1 leading-relaxed">{rep.description}</p>
+                </div>
+              </div>
+              {/* Stat */}
+              <div className="flex items-baseline gap-1.5 px-3 py-2 bg-muted/40 rounded-xl">
+                <span className={`text-2xl font-bold font-mono ${rep.iconColor}`}>{rep.stat}</span>
+                <span className="text-xs text-muted-foreground">{rep.statLabel}</span>
+              </div>
+            </div>
+
+            {/* Format buttons */}
+            <div className="p-4 flex flex-col gap-2 flex-1 justify-end">
+              <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">Скачать как</p>
+              {rep.formats.map(f => {
+                const key = `${rep.id}-${f.fmt}`;
+                const isLoading = generating === key;
+                return (
+                  <button
+                    key={f.fmt}
+                    onClick={() => onExport(rep.id, f.fmt)}
+                    disabled={!!generating}
+                    className={`flex items-center gap-3 px-4 py-3 rounded-xl border transition-all text-left group
+                      ${f.fmt === "pdf"
+                        ? "border-red-500/20 bg-red-500/5 hover:bg-red-500/10 hover:border-red-500/40"
+                        : "border-emerald-500/20 bg-emerald-500/5 hover:bg-emerald-500/10 hover:border-emerald-500/40"}
+                      disabled:opacity-50 disabled:cursor-not-allowed`}
+                  >
+                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${f.fmt === "pdf" ? "bg-red-500/15" : "bg-emerald-500/15"}`}>
+                      {isLoading
+                        ? <Icon name="Loader2" size={15} className={`animate-spin ${f.fmt === "pdf" ? "text-red-400" : "text-emerald-400"}`} />
+                        : <Icon name={f.fmt === "pdf" ? "FileText" : "Table"} size={15} className={f.fmt === "pdf" ? "text-red-400" : "text-emerald-400"} />
+                      }
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className={`text-sm font-semibold ${f.fmt === "pdf" ? "text-red-400" : "text-emerald-400"}`}>
+                        {isLoading ? "Генерация..." : f.label}
+                      </p>
+                      <p className="text-[10px] text-muted-foreground truncate">{f.desc}</p>
+                    </div>
+                    {!isLoading && (
+                      <Icon name="Download" size={14} className="text-muted-foreground group-hover:text-foreground transition-colors shrink-0" />
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Info banner */}
+      <div className="flex items-start gap-3 px-4 py-3.5 bg-primary/5 border border-primary/20 rounded-xl">
+        <Icon name="Info" size={16} className="text-primary shrink-0 mt-0.5" />
+        <p className="text-sm text-muted-foreground">
+          Отчёты формируются на основе текущих данных организации{" "}
+          <span className="text-foreground font-medium">{currentOrg?.shortName}</span>.
+          Для отчётов по другой организации переключитесь через меню в сайдбаре.
+        </p>
       </div>
     </div>
   );
