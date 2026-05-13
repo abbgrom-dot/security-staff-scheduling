@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useNow, fmtTime, fmtDuration, minutesSince } from "@/hooks/useNow";
 import { AppProvider, useApp } from "@/context/AppContext";
 import LoginScreen from "@/components/LoginScreen";
 import OrgSwitcher from "@/components/OrgSwitcher";
@@ -116,90 +117,232 @@ function DeleteModal({ name, onConfirm, onClose }: { name: string; onConfirm: ()
 }
 
 // ─── Assign Modal ─────────────────────────────────────────────────────────────
+// Статус-бейдж для сотрудника в списке назначения
+function empStatusLabel(status: import("@/types").Employee["status"]) {
+  switch (status) {
+    case "active": return { text: "На смене",   cls: "text-emerald-400 bg-emerald-500/10 border-emerald-500/30" };
+    case "off":    return { text: "Выходной",   cls: "text-amber-400 bg-amber-500/10 border-amber-500/30" };
+    case "sick":   return { text: "Больничный", cls: "text-red-400 bg-red-500/10 border-red-500/30" };
+    case "extra":  return { text: "Подработка", cls: "text-purple-400 bg-purple-500/10 border-purple-500/30" };
+  }
+}
+
 function AssignModal({ post, onAssign, onClose }: {
   post: Post;
   onAssign: (postId: number, empId: number | null, fine: Omit<FineRecord, "id" | "date" | "postId" | "orgId"> | null) => void;
   onClose: () => void;
 }) {
-  const { employees, fineReasons, locations } = useApp();
+  const { employees, fineReasons, locations, posts } = useApp();
   const loc = locations.find(l => l.id === post.locationId);
   const curEmp = employees.find(e => e.id === post.officerId) ?? null;
+
   const [selId, setSelId] = useState<number | null>(post.officerId);
+  const [isExtra, setIsExtra] = useState(false);     // назначить как подработку
   const [withFine, setWithFine] = useState(false);
   const [reasonId, setReasonId] = useState<number>(fineReasons[0]?.id ?? 1);
   const [fineAmt, setFineAmt] = useState<number>(fineReasons[0]?.amount ?? 500);
   const [fineNote, setFineNote] = useState("");
+  const [search, setSearch] = useState("");
 
-  const handleReason = (id: number) => { setReasonId(id); const r = fineReasons.find(r => r.id === id); if (r) setFineAmt(r.amount); };
+  // Сотрудники, уже занятые на других постах (кроме текущего)
+  const busyIds = new Set(
+    posts.filter(p => p.id !== post.id && p.officerId !== null && p.status !== "vacant")
+         .map(p => p.officerId as number)
+  );
+
+  // Выбранный сотрудник
+  const selEmp = employees.find(e => e.id === selId);
+
+  // Автоустановка isExtra если сотрудник в выходном
+  useEffect(() => {
+    if (selEmp && (selEmp.status === "off" || selEmp.status === "extra")) {
+      setIsExtra(true);
+    } else {
+      setIsExtra(false);
+    }
+  }, [selId]);
+
+  const handleReason = (id: number) => {
+    setReasonId(id);
+    const r = fineReasons.find(r => r.id === id);
+    if (r) setFineAmt(r.amount);
+  };
+
   const isReplacement = curEmp !== null && selId !== post.officerId;
+
+  // Группировка сотрудников: доступные → на выходном (подработка) → занятые → больничный
+  const searchLower = search.toLowerCase();
+  const sortedEmps = [...employees]
+    .filter(e => !searchLower || e.name.toLowerCase().includes(searchLower) || e.rank.toLowerCase().includes(searchLower))
+    .sort((a, b) => {
+      const order = (e: typeof a) => {
+        if (e.id === post.officerId) return 0;
+        if (busyIds.has(e.id)) return 3;
+        if (e.status === "sick") return 4;
+        if (e.status === "off" || e.status === "extra") return 2;
+        return 1;
+      };
+      return order(a) - order(b);
+    });
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-card border border-border rounded-2xl p-6 w-full max-w-lg section-enter" onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between mb-1">
-          <h3 className="font-bold text-lg text-foreground">Назначение на пост</h3>
+      <div className="bg-card border border-border rounded-2xl w-full max-w-lg max-h-[90vh] flex flex-col section-enter" onClick={e => e.stopPropagation()}>
+        {/* Header */}
+        <div className="flex items-center justify-between p-5 border-b border-border shrink-0">
+          <div>
+            <h3 className="font-bold text-lg text-foreground">Назначение на пост</h3>
+            <p className="text-xs text-muted-foreground mt-0.5">{post.name} · {loc?.name ?? "—"} · <span className="font-mono">{post.time}</span></p>
+          </div>
           <button onClick={onClose} className="text-muted-foreground hover:text-foreground"><Icon name="X" size={20} /></button>
         </div>
-        <p className="text-sm text-muted-foreground mb-5">{post.name} · {loc?.name ?? "—"} · <span className="font-mono">{post.time}</span></p>
 
-        {curEmp && (
-          <div className="flex items-center gap-3 p-3 bg-muted/60 rounded-xl mb-4">
-            <div className="w-9 h-9 rounded-full bg-primary/20 flex items-center justify-center text-xs font-bold text-primary shrink-0">
-              {curEmp.name.split(" ").map(n => n[0]).join("").slice(0, 2)}
+        <div className="flex-1 overflow-y-auto p-5 space-y-4">
+          {/* Текущий сотрудник */}
+          {curEmp && (
+            <div className="flex items-center gap-3 p-3 bg-muted/60 rounded-xl">
+              <div className="w-9 h-9 rounded-full bg-primary/20 flex items-center justify-center text-xs font-bold text-primary shrink-0">
+                {curEmp.name.split(" ").map(n => n[0]).join("").slice(0, 2)}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-foreground">{curEmp.name}</p>
+                <p className="text-xs text-muted-foreground">{curEmp.rank} · сейчас на посту</p>
+              </div>
+              <Icon name="ArrowRight" size={16} className="text-muted-foreground" />
             </div>
-            <div className="flex-1 min-w-0"><p className="text-sm font-medium text-foreground">{curEmp.name}</p><p className="text-xs text-muted-foreground">{curEmp.rank} · сейчас на посту</p></div>
-            <Icon name="ArrowRight" size={16} className="text-muted-foreground" />
+          )}
+
+          {/* Поиск */}
+          <div className="relative">
+            <Icon name="Search" size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            <input
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Найти сотрудника..."
+              className="w-full bg-muted border border-border rounded-xl pl-9 pr-4 py-2 text-sm text-foreground focus:outline-none focus:border-primary/50"
+            />
+            {search && <button onClick={() => setSearch("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground"><Icon name="X" size={13} /></button>}
           </div>
-        )}
 
-        <Field label="Назначить сотрудника">
-          <select value={selId ?? ""} onChange={e => setSelId(e.target.value === "" ? null : Number(e.target.value))} className={inputCls}>
-            <option value="">— Снять (вакантный пост) —</option>
-            {employees.map(e => <option key={e.id} value={e.id}>{e.name} · {e.rank}{e.id === post.officerId ? " (текущий)" : ""}</option>)}
-          </select>
-        </Field>
-
-        {isReplacement && curEmp && (
-          <div className="mt-4 border border-border rounded-xl overflow-hidden">
-            <button onClick={() => setWithFine(v => !v)} className="w-full flex items-center gap-3 px-4 py-3 hover:bg-muted/40 transition-colors text-left">
-              <div className={`w-5 h-5 rounded flex items-center justify-center ${withFine ? "bg-primary" : "bg-muted border border-border"}`}>
-                {withFine && <Icon name="Check" size={12} className="text-primary-foreground" />}
+          {/* Список сотрудников */}
+          <div className="space-y-1.5">
+            {/* Снять охранника */}
+            <button
+              onClick={() => setSelId(null)}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border text-left transition-all ${selId === null ? "border-amber-500/40 bg-amber-500/8" : "border-border bg-muted/30 hover:bg-muted/60"}`}
+            >
+              <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center shrink-0">
+                <Icon name="UserX" size={14} className="text-muted-foreground" />
               </div>
-              <div className="flex-1">
-                <p className="text-sm font-medium text-foreground">Начислить штраф</p>
-                <p className="text-xs text-muted-foreground">{curEmp.name} — зафиксировать нарушение</p>
-              </div>
+              <span className="text-sm text-muted-foreground flex-1">— Снять охранника (вакантный пост) —</span>
+              {selId === null && <Icon name="Check" size={14} className="text-amber-400 shrink-0" />}
             </button>
-            {withFine && (
-              <div className="px-4 pb-4 space-y-3 border-t border-border pt-4">
-                <Field label="Причина">
-                  <select value={reasonId} onChange={e => handleReason(Number(e.target.value))} className={inputCls}>
-                    {fineReasons.map(r => <option key={r.id} value={r.id}>{r.label} — {fmt(r.amount)}</option>)}
-                  </select>
-                </Field>
-                <div className="grid grid-cols-2 gap-3">
-                  <Field label="Сумма штрафа, ₽">
-                    <input type="number" min={0} step={100} value={fineAmt} onChange={e => setFineAmt(Number(e.target.value))} className={inputCls} />
-                  </Field>
-                  <Field label="Примечание">
-                    <input value={fineNote} onChange={e => setFineNote(e.target.value)} placeholder="Уточнение..." className={inputCls} />
-                  </Field>
-                </div>
-                <div className="flex items-center gap-2 px-3 py-2 bg-amber-500/10 border border-amber-500/20 rounded-lg text-xs text-amber-400">
-                  <Icon name="AlertTriangle" size={13} /> Штраф {fmt(fineAmt)} будет записан в историю
-                </div>
+
+            {sortedEmps.map(e => {
+              const isCurrent = e.id === post.officerId;
+              const isBusy = busyIds.has(e.id) && !isCurrent;
+              const isSick = e.status === "sick";
+              const isOff = e.status === "off" || e.status === "extra";
+              const statusInfo = empStatusLabel(e.status);
+              const isSelected = selId === e.id;
+
+              return (
+                <button
+                  key={e.id}
+                  onClick={() => !isSick && setSelId(e.id)}
+                  disabled={isSick}
+                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border text-left transition-all
+                    ${isSick         ? "border-border/40 bg-muted/20 opacity-50 cursor-not-allowed" :
+                      isSelected     ? "border-primary/50 bg-primary/8" :
+                      isBusy         ? "border-border/40 bg-muted/20 opacity-60" :
+                                       "border-border bg-muted/30 hover:bg-muted/60"}`}
+                >
+                  {/* Аватар */}
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0
+                    ${isSelected ? "bg-primary/20 text-primary" : "bg-muted text-muted-foreground"}`}>
+                    {e.name.split(" ").map(n => n[0]).join("").slice(0, 2)}
+                  </div>
+
+                  {/* Имя + должность */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p className="text-sm font-medium text-foreground truncate">{e.name}</p>
+                      {isCurrent && <span className="text-[10px] text-primary border border-primary/30 rounded px-1.5 py-0.5 bg-primary/10 shrink-0">текущий</span>}
+                      {isBusy && <span className="text-[10px] text-muted-foreground border border-border rounded px-1.5 py-0.5 shrink-0">занят</span>}
+                    </div>
+                    <p className="text-[10px] text-muted-foreground">{e.rank}</p>
+                  </div>
+
+                  {/* Статус бейдж */}
+                  <span className={`text-[10px] px-2 py-0.5 rounded-full border font-medium shrink-0 ${statusInfo.cls}`}>
+                    {statusInfo.text}
+                  </span>
+
+                  {/* Чекмарк */}
+                  {isSelected && <Icon name="Check" size={14} className="text-primary shrink-0" />}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Флаг подработки */}
+          {selEmp && (selEmp.status === "off" || selEmp.status === "extra") && (
+            <div className="p-3 bg-purple-500/8 border border-purple-500/20 rounded-xl space-y-2">
+              <div className="flex items-center gap-2">
+                <Icon name="Star" size={14} className="text-purple-400" />
+                <p className="text-sm font-semibold text-foreground">Подработка в выходной</p>
               </div>
-            )}
-          </div>
-        )}
+              <p className="text-xs text-muted-foreground">
+                Сотрудник в выходном. Ставка подработки: ×{selEmp.extraShiftRate} от обычной
+                {selEmp.extraShiftRate > 1 && <span className="text-purple-400 font-mono ml-1">(+{Math.round((selEmp.extraShiftRate - 1) * 100)}%)</span>}
+              </p>
+            </div>
+          )}
 
-        {selId === null && curEmp && (
-          <div className="mt-4 flex items-center gap-2 px-3 py-2.5 bg-amber-500/10 border border-amber-500/20 rounded-xl text-xs text-amber-400">
-            <Icon name="Info" size={13} /> Пост будет помечен как вакантный
-          </div>
-        )}
+          {/* Штраф при замене */}
+          {isReplacement && curEmp && (
+            <div className="border border-border rounded-xl overflow-hidden">
+              <button onClick={() => setWithFine(v => !v)} className="w-full flex items-center gap-3 px-4 py-3 hover:bg-muted/40 transition-colors text-left">
+                <div className={`w-5 h-5 rounded flex items-center justify-center ${withFine ? "bg-primary" : "bg-muted border border-border"}`}>
+                  {withFine && <Icon name="Check" size={12} className="text-primary-foreground" />}
+                </div>
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-foreground">Начислить штраф</p>
+                  <p className="text-xs text-muted-foreground">{curEmp.name} — зафиксировать нарушение</p>
+                </div>
+              </button>
+              {withFine && (
+                <div className="px-4 pb-4 space-y-3 border-t border-border pt-4">
+                  <Field label="Причина">
+                    <select value={reasonId} onChange={e => handleReason(Number(e.target.value))} className={inputCls}>
+                      {fineReasons.map(r => <option key={r.id} value={r.id}>{r.label} — {fmt(r.amount)}</option>)}
+                    </select>
+                  </Field>
+                  <div className="grid grid-cols-2 gap-3">
+                    <Field label="Сумма штрафа, ₽">
+                      <input type="number" min={0} step={100} value={fineAmt} onChange={e => setFineAmt(Number(e.target.value))} className={inputCls} />
+                    </Field>
+                    <Field label="Примечание">
+                      <input value={fineNote} onChange={e => setFineNote(e.target.value)} placeholder="Уточнение..." className={inputCls} />
+                    </Field>
+                  </div>
+                  <div className="flex items-center gap-2 px-3 py-2 bg-amber-500/10 border border-amber-500/20 rounded-lg text-xs text-amber-400">
+                    <Icon name="AlertTriangle" size={13} /> Штраф {fmt(fineAmt)} будет записан в историю
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
-        <div className="mt-6 flex gap-3">
+          {selId === null && curEmp && (
+            <div className="flex items-center gap-2 px-3 py-2.5 bg-amber-500/10 border border-amber-500/20 rounded-xl text-xs text-amber-400">
+              <Icon name="Info" size={13} /> Пост будет помечен как вакантный
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="flex gap-3 p-5 border-t border-border shrink-0">
           <button
             onClick={() => {
               const fine = withFine && curEmp ? { employeeId: curEmp.id, reasonId, note: fineNote, amount: fineAmt } : null;
@@ -208,7 +351,7 @@ function AssignModal({ post, onAssign, onClose }: {
             }}
             className="flex-1 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:opacity-90"
           >
-            {isReplacement ? "Заменить" : selId === null ? "Снять охранника" : "Назначить"}
+            {isReplacement ? "Заменить" : selId === null ? "Снять охранника" : isExtra ? "Назначить (подработка)" : "Назначить"}
           </button>
           <button onClick={onClose} className="px-5 py-2.5 rounded-xl bg-muted text-foreground text-sm hover:bg-secondary">Отмена</button>
         </div>
@@ -494,6 +637,7 @@ function ClosePostModal({ post, onClose: onModalClose, onConfirm }: {
 function Placements() {
   const { locations, posts, employees, assignPost, confirmPost, closePost, can, session } = useApp();
   const canEdit = can("placements:edit");
+  const now = useNow(60_000); // обновляется каждую минуту
   const [assignPost2, setAssignPost2] = useState<Post | null>(null);
   const [confirmingPost, setConfirmingPost] = useState<Post | null>(null);
   const [closingPost, setClosingPost] = useState<Post | null>(null);
@@ -521,11 +665,22 @@ function Placements() {
           <h2 className="text-2xl font-bold text-foreground">Расстановки</h2>
           <p className="text-muted-foreground text-sm mt-1">Назначение и подтверждение заступления на посты</p>
         </div>
-        {canEdit && (
-          <button onClick={() => setFineSettings(true)} className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-muted text-foreground text-sm font-medium hover:bg-secondary transition-colors">
-            <Icon name="Settings2" size={15} /> Причины штрафов
-          </button>
-        )}
+        <div className="flex items-center gap-3">
+          {/* Живые часы */}
+          <div className="flex items-center gap-2 px-3 py-2 bg-card border border-border rounded-xl">
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+            </span>
+            <span className="text-sm font-mono font-semibold text-foreground">{fmtTime(now)}</span>
+            <span className="text-xs text-muted-foreground hidden sm:block">сейчас</span>
+          </div>
+          {canEdit && (
+            <button onClick={() => setFineSettings(true)} className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-muted text-foreground text-sm font-medium hover:bg-secondary transition-colors">
+              <Icon name="Settings2" size={15} /> Причины штрафов
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Confirmation summary */}
@@ -621,6 +776,11 @@ function Placements() {
                           <p className="text-[10px] text-emerald-400 flex items-center gap-1">
                             <Icon name="Clock" size={9} />
                             Заступил: <span className="font-mono font-semibold">{post.actualStartTime}</span>
+                            {post.confirmedAt && !isClosed && (
+                              <span className="text-muted-foreground ml-1">
+                                ({fmtDuration(minutesSince(post.confirmedAt))} на посту)
+                              </span>
+                            )}
                           </p>
                           <p className="text-[10px] text-muted-foreground flex items-center gap-1">
                             <Icon name="User" size={9} />
@@ -630,6 +790,13 @@ function Placements() {
                             <p className="text-[10px] text-blue-400 flex items-center gap-1">
                               <Icon name="Timer" size={9} />
                               Отработано: <span className="font-mono font-semibold">{post.actualHours} ч</span>
+                            </p>
+                          )}
+                          {/* Подработка */}
+                          {post.isExtraShift && (
+                            <p className="text-[10px] text-purple-400 flex items-center gap-1">
+                              <Icon name="Star" size={9} />
+                              Подработка
                             </p>
                           )}
                         </div>
@@ -722,6 +889,7 @@ type EmpForm = Omit<import("@/types").Employee, "id" | "orgId">;
 const EMPTY_EMP: EmpForm = {
   name: "", rank: "Охранник", status: "active", location: "—",
   shift: "08:00 – 20:00", phone: "", hireDate: "", yearsExp: 0, seniorityBonus: 0, note: "",
+  extraShiftRate: 1.5,
 };
 
 function EmployeeModal({ initial, onSave, onClose, title }: {
@@ -759,6 +927,7 @@ function EmployeeModal({ initial, onSave, onClose, title }: {
             <Field label="Статус">
               <select value={form.status} onChange={e => set("status", e.target.value as EmpForm["status"])} className={inputCls}>
                 <option value="active">На смене</option>
+                <option value="extra">Подработка (выходной)</option>
                 <option value="off">Выходной</option>
                 <option value="sick">Больничный</option>
               </select>
@@ -767,6 +936,33 @@ function EmployeeModal({ initial, onSave, onClose, title }: {
               <input value={form.phone} onChange={e => set("phone", e.target.value)} placeholder="+7 900 000-00-00" className={inputCls} />
             </Field>
           </div>
+
+          {/* Ставка подработки — показываем если extra или off */}
+          {(form.status === "extra" || form.status === "off") && (
+            <div className="p-4 bg-purple-500/5 border border-purple-500/20 rounded-xl space-y-3">
+              <div className="flex items-center gap-2">
+                <Icon name="Star" size={14} className="text-purple-400" />
+                <p className="text-sm font-semibold text-foreground">Коэффициент подработки</p>
+              </div>
+              <div className="flex items-center gap-3">
+                <Field label="Коэффициент оплаты">
+                  <select
+                    value={form.extraShiftRate}
+                    onChange={e => set("extraShiftRate", parseFloat(e.target.value))}
+                    className={inputCls}
+                  >
+                    <option value={1.0}>×1.0 — стандартная ставка</option>
+                    <option value={1.25}>×1.25 — +25%</option>
+                    <option value={1.5}>×1.5 — полтора (стандарт ТК)</option>
+                    <option value={2.0}>×2.0 — двойная ставка</option>
+                  </select>
+                </Field>
+              </div>
+              <p className="text-[10px] text-muted-foreground">
+                При назначении на пост в выходной применяется этот коэффициент к тарифу объекта + надбавке
+              </p>
+            </div>
+          )}
 
           {/* Смена + Локация */}
           <div className="grid grid-cols-2 gap-4">
@@ -1137,8 +1333,9 @@ function EmployeeSalaryCard({ employee, locations, onEdit, onClose }: {
 function Employees() {
   const { employees, addEmployee, editEmployee, deleteEmployee, locations, posts, fines, can } = useApp();
   const canEdit = can("employees:edit");
+  const now = useNow(60_000);
 
-  const [filter, setFilter] = useState<"all" | "active" | "off" | "sick">("all");
+  const [filter, setFilter] = useState<"all" | "active" | "off" | "sick" | "extra">("all");
   const [search, setSearch] = useState("");
   const [modal, setModal] = useState<"add" | "edit" | "delete" | "card" | null>(null);
   const [target, setTarget] = useState<import("@/types").Employee | null>(null);
@@ -1148,10 +1345,10 @@ function Employees() {
     .filter(e => filter === "all" || e.status === filter)
     .filter(e => !search || e.name.toLowerCase().includes(search.toLowerCase()) || e.rank.toLowerCase().includes(search.toLowerCase()));
 
-  const badge = (s: "active" | "off" | "sick") =>
-    s === "active" ? <span className="badge-active">На смене</span>
-    : s === "sick" ? <span className="badge-danger">Больничный</span>
-    : <span className="badge-inactive">Выходной</span>;
+  const badge = (s: import("@/types").Employee["status"]) => {
+    const info = empStatusLabel(s);
+    return <span className={`text-[10px] px-2 py-0.5 rounded-full border font-medium ${info.cls}`}>{info.text}</span>;
+  };
 
   const getEffectiveRate = (e: import("@/types").Employee) => {
     const loc = locations.find(l => e.location.startsWith(l.name));
@@ -1164,6 +1361,7 @@ function Employees() {
     active: employees.filter(e => e.status === "active").length,
     off: employees.filter(e => e.status === "off").length,
     sick: employees.filter(e => e.status === "sick").length,
+    extra: employees.filter(e => e.status === "extra").length,
   };
 
   return (
@@ -1174,17 +1372,33 @@ function Employees() {
           <h2 className="text-2xl font-bold text-foreground">Сотрудники</h2>
           <p className="text-muted-foreground text-sm mt-1">{employees.length} охранников в базе</p>
         </div>
-        {canEdit && (
-          <button onClick={() => { setTarget(null); setModal("add"); }} className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:opacity-90 shrink-0">
-            <Icon name="UserPlus" size={16} /> Добавить
-          </button>
-        )}
+        <div className="flex items-center gap-3">
+          {/* Живые часы */}
+          <div className="flex items-center gap-2 px-3 py-2 bg-card border border-border rounded-xl">
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+            </span>
+            <span className="text-sm font-mono font-semibold text-foreground">{fmtTime(now)}</span>
+          </div>
+          {canEdit && (
+            <button onClick={() => { setTarget(null); setModal("add"); }} className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:opacity-90 shrink-0">
+              <Icon name="UserPlus" size={16} /> Добавить
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Filters + Search */}
       <div className="flex gap-3 flex-wrap items-center">
         <div className="flex gap-1.5 flex-wrap">
-          {([["all", "Все"], ["active", "На смене"], ["off", "Выходной"], ["sick", "Больничный"]] as const).map(([k, l]) => (
+          {([
+            ["all", "Все"],
+            ["active", "На смене"],
+            ["extra", "Подработка"],
+            ["off", "Выходной"],
+            ["sick", "Больничный"],
+          ] as const).map(([k, l]) => (
             <button key={k} onClick={() => setFilter(k)}
               className={`px-3 py-1.5 rounded-xl text-sm font-medium transition-all flex items-center gap-1.5 ${filter === k ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:text-foreground"}`}>
               {l}

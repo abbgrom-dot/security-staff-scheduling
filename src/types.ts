@@ -98,14 +98,15 @@ export interface Employee {
   orgId: number;
   name: string;
   rank: string;
-  status: "active" | "off" | "sick";
+  status: "active" | "off" | "sick" | "extra"; // extra = подработка в выходной
   location: string;
   shift: string;
   phone: string;
-  hireDate: string;          // ISO date — дата приёма
-  yearsExp: number;          // стаж в годах
-  seniorityBonus: number;    // надбавка за выслугу, ₽/час
+  hireDate: string;
+  yearsExp: number;
+  seniorityBonus: number;
   note: string;
+  extraShiftRate: number;   // доп. коэффициент оплаты подработки (1.0 = стандарт, 1.5 = полтора)
 }
 
 export interface Post {
@@ -116,11 +117,12 @@ export interface Post {
   officerId: number | null;
   time: string;
   status: "covered" | "vacant" | "alert";
+  isExtraShift: boolean;        // пост закрыт сотрудником на подработке
   // Фактическое заступление
-  confirmedAt: string | null;    // ISO datetime — когда оператор подтвердил
-  confirmedBy: string | null;    // имя оператора
-  actualStartTime: string | null; // фактическое время заступления (HH:MM)
-  actualHours: number | null;    // фактически отработано часов (null = смена не завершена)
+  confirmedAt: string | null;
+  confirmedBy: string | null;
+  actualStartTime: string | null;
+  actualHours: number | null;
 }
 
 export interface FineReason {
