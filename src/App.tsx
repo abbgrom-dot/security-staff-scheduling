@@ -827,6 +827,74 @@ function Employees() {
         </div>
       </div>
 
+      {/* ── ФОТ summary ── */}
+      {employees.length > 0 && (() => {
+        const SHIFTS = 15;
+        const all = employees.map(e => {
+          const r = getEffectiveRate(e);
+          const hrs = parseShiftHours(e.shift);
+          return { rate: r, hrs, perMonth: r.total * hrs * SHIFTS };
+        });
+        const fotTotal = all.reduce((s, x) => s + x.perMonth, 0);
+        const fotActive = employees.filter(e => e.status === "active").map(e => {
+          const r = getEffectiveRate(e);
+          const hrs = parseShiftHours(e.shift);
+          return r.total * hrs * SHIFTS;
+        }).reduce((s, v) => s + v, 0);
+        const avgRate = all.filter(x => x.rate.total > 0);
+        const avgRateVal = avgRate.length > 0 ? Math.round(avgRate.reduce((s, x) => s + x.rate.total, 0) / avgRate.length) : 0;
+        const maxBonus = Math.max(...employees.map(e => e.seniorityBonus), 0);
+        const fmtR = (n: number) => n.toLocaleString("ru-RU") + " ₽";
+
+        return (
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {[
+              {
+                label: "ФОТ в месяц (все)",
+                val: fmtR(fotTotal),
+                sub: `${employees.length} чел. × 15 смен`,
+                icon: "Banknote",
+                c: "text-primary",
+                bg: "bg-primary/10",
+              },
+              {
+                label: "ФОТ на смене сейчас",
+                val: fmtR(fotActive),
+                sub: `${employees.filter(e => e.status === "active").length} активных`,
+                icon: "UserCheck",
+                c: "text-emerald-400",
+                bg: "bg-emerald-500/10",
+              },
+              {
+                label: "Средняя ставка",
+                val: avgRateVal > 0 ? `${avgRateVal} ₽/ч` : "—",
+                sub: "тариф + надбавка",
+                icon: "TrendingUp",
+                c: "text-amber-400",
+                bg: "bg-amber-500/10",
+              },
+              {
+                label: "Макс. надбавка",
+                val: maxBonus > 0 ? `+${maxBonus} ₽/ч` : "—",
+                sub: "за выслугу лет",
+                icon: "Award",
+                c: "text-cyan-400",
+                bg: "bg-cyan-500/10",
+              },
+            ].map(s => (
+              <div key={s.label} className="bg-card border border-border rounded-xl p-4">
+                <div className={`w-9 h-9 rounded-xl ${s.bg} flex items-center justify-center mb-2.5`}>
+                  <Icon name={s.icon} size={18} className={s.c} />
+                </div>
+                <div className={`text-lg font-bold font-mono ${s.c} leading-tight`}>{s.val}</div>
+                <div className="text-xs text-muted-foreground mt-0.5">{s.label}</div>
+                <div className="text-[10px] text-muted-foreground/60 mt-0.5">{s.sub}</div>
+              </div>
+            ))}
+          </div>
+        );
+      })()}
+
       {/* Table */}
       {filtered.length === 0 ? (
         <div className="bg-card border border-border rounded-xl p-12 text-center">
@@ -915,6 +983,45 @@ function Employees() {
                   );
                 })}
               </tbody>
+              {/* ── Footer: totals ── */}
+              {(() => {
+                const SHIFTS_DEFAULT = 15;
+                const totals = filtered.reduce((acc, e) => {
+                  const r = getEffectiveRate(e);
+                  const hrs = parseShiftHours(e.shift);
+                  const perMonth = r.total * hrs * SHIFTS_DEFAULT;
+                  return {
+                    base: acc.base + r.base,
+                    bonus: acc.bonus + r.bonus,
+                    total: acc.total + r.total,
+                    fot: acc.fot + perMonth,
+                  };
+                }, { base: 0, bonus: 0, total: 0, fot: 0 });
+                const fmtR = (n: number) => n.toLocaleString("ru-RU") + " ₽";
+                if (filtered.length === 0) return null;
+                return (
+                  <tfoot>
+                    <tr className="border-t-2 border-border bg-muted/40">
+                      <td className="px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                        Итого: {filtered.length} чел.
+                      </td>
+                      <td className="px-4 py-3" />
+                      <td className="px-4 py-3" />
+                      <td className="px-4 py-3" />
+                      <td className="px-4 py-3 text-sm font-mono text-foreground">
+                        {totals.base > 0 ? `∅ ${Math.round(totals.base / filtered.length)} ₽/ч` : "—"}
+                      </td>
+                      <td className="px-4 py-3 text-sm font-mono text-amber-400">
+                        {totals.bonus > 0 ? `∅ +${Math.round(totals.bonus / filtered.length)} ₽/ч` : "—"}
+                      </td>
+                      <td className="px-4 py-3 text-sm font-mono font-bold text-emerald-400">
+                        ФОТ/мес: {fmtR(totals.fot)}
+                      </td>
+                      <td className="px-4 py-3" />
+                    </tr>
+                  </tfoot>
+                );
+              })()}
             </table>
           </div>
         </div>
