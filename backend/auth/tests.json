@@ -1,0 +1,27 @@
+{
+  "tests": [
+    {
+      "name": "Login superadmin",
+      "method": "POST",
+      "path": "/",
+      "body": {"email": "admin@securgroup.ru", "password": "any"},
+      "expectedStatus": 200,
+      "expectedBody": {"user": {"id": 1}},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Login unknown email",
+      "method": "POST",
+      "path": "/",
+      "body": {"email": "nobody@example.com", "password": "any"},
+      "expectedStatus": 401
+    },
+    {
+      "name": "Login inactive user",
+      "method": "POST",
+      "path": "/",
+      "body": {"email": "ryabov@og-yug.ru", "password": "any"},
+      "expectedStatus": 403
+    }
+  ]
+}

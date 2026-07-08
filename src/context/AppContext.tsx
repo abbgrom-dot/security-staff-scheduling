@@ -1,19 +1,31 @@
-import { createContext, useContext, useState, type ReactNode } from "react";
+import { createContext, useContext, useState, useEffect, type ReactNode } from "react";
 import type {
   Holding, Organization, Role, AppUser,
   Location, Employee, Post, FineReason, FineRecord,
   AuthSession, Permission,
 } from "@/types";
 import {
-  INIT_HOLDING, INIT_ORGS, INIT_ROLES, INIT_USERS,
-  INIT_LOCATIONS, INIT_EMPLOYEES, INIT_POSTS,
-  INIT_FINE_REASONS, INIT_FINES,
+  INIT_HOLDING,
 } from "@/data";
+import {
+  apiLoadAll, apiLogin,
+  apiAddOrg, apiEditOrg, apiDeleteOrg,
+  apiAddRole, apiEditRole, apiDeleteRole,
+  apiAddUser, apiEditUser, apiDeleteUser,
+  apiAddLocation, apiEditLocation, apiDeleteLocation,
+  apiAddEmployee, apiEditEmployee, apiSetEmployeeStatus, apiDeleteEmployee,
+  apiAssignPost, apiConfirmPost, apiClosePost,
+  apiReplaceFineReasons, apiAddFine,
+} from "@/lib/api";
 
 interface AppContextValue {
+  // Loading & data readiness
+  loading: boolean;
+  loadError: string | null;
+
   // Auth
   session: AuthSession | null;
-  login: (userId: number, orgId: number) => void;
+  login: (email: string, password: string) => Promise<void>;
   logout: () => void;
   switchOrg: (orgId: number) => void;
   can: (p: Permission) => boolean;
@@ -80,25 +92,55 @@ function maxId<T extends { id: number }>(arr: T[]) {
 }
 
 export function AppProvider({ children }: { children: ReactNode }) {
-  const [holding] = useState<Holding>(INIT_HOLDING);
-  const [orgs, setOrgs] = useState<Organization[]>(INIT_ORGS);
-  const [roles, setRoles] = useState<Role[]>(INIT_ROLES);
-  const [users, setUsers] = useState<AppUser[]>(INIT_USERS);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  const [holding, setHolding] = useState<Holding>(INIT_HOLDING);
+  const [orgs, setOrgs] = useState<Organization[]>([]);
+  const [roles, setRoles] = useState<Role[]>([]);
+  const [users, setUsers] = useState<AppUser[]>([]);
   const [session, setSession] = useState<AuthSession | null>(null);
 
-  const [allLocations, setAllLocations] = useState<Location[]>(INIT_LOCATIONS);
-  const [allEmployees, setAllEmployees] = useState<Employee[]>(INIT_EMPLOYEES);
-  const [allPosts, setAllPosts] = useState<Post[]>(INIT_POSTS);
-  const [allFineReasons, setAllFineReasons] = useState<FineReason[]>(INIT_FINE_REASONS);
-  const [allFines, setAllFines] = useState<FineRecord[]>(INIT_FINES);
+  const [allLocations, setAllLocations] = useState<Location[]>([]);
+  const [allEmployees, setAllEmployees] = useState<Employee[]>([]);
+  const [allPosts, setAllPosts] = useState<Post[]>([]);
+  const [allFineReasons, setAllFineReasons] = useState<FineReason[]>([]);
+  const [allFines, setAllFines] = useState<FineRecord[]>([]);
+
+  // ── Initial load from API ──────────────────────────────────────────────────
+  useEffect(() => {
+    let cancelled = false;
+    apiLoadAll()
+      .then(data => {
+        if (cancelled) return;
+        if (data.holding) setHolding(data.holding);
+        setOrgs(data.orgs);
+        setRoles(data.roles);
+        setUsers(data.users);
+        setAllLocations(data.locations);
+        setAllEmployees(data.employees);
+        setAllPosts(data.posts);
+        setAllFineReasons(data.fineReasons);
+        setAllFines(data.fines);
+      })
+      .catch(err => { if (!cancelled) setLoadError(err.message || "Ошибка загрузки"); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, []);
 
   const currentOrgId = session?.currentOrgId ?? 0;
   const currentOrg = orgs.find(o => o.id === currentOrgId);
 
   // ── Auth ──────────────────────────────────────────────────────────────────
-  const login = (userId: number, orgId: number) => {
-    const user = users.find(u => u.id === userId);
-    if (user) setSession({ user, currentOrgId: orgId });
+  const login = async (email: string, password: string) => {
+    const user = await apiLogin(email, password);
+    // sync fresh user into users list
+    setUsers(prev => {
+      const exists = prev.find(u => u.id === user.id);
+      return exists ? prev.map(u => u.id === user.id ? user : u) : [...prev, user];
+    });
+    const defaultOrg = user.orgIds[0];
+    setSession({ user, currentOrgId: defaultOrg });
   };
 
   const logout = () => setSession(null);
@@ -129,28 +171,48 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   // ── Orgs CRUD ────────────────────────────────────────────────────────────
-  const addOrg = (d: Omit<Organization, "id" | "holdingId">) =>
-    setOrgs(prev => [...prev, { id: maxId(prev) + 1, holdingId: holding.id, ...d }]);
-  const editOrg = (id: number, d: Omit<Organization, "id" | "holdingId">) =>
-    setOrgs(prev => prev.map(o => o.id === id ? { id, holdingId: holding.id, ...d } : o));
-  const deleteOrg = (id: number) =>
+  const addOrg = (d: Omit<Organization, "id" | "holdingId">) => {
+    apiAddOrg({ holdingId: holding.id, ...d })
+      .then(res => setOrgs(prev => [...prev, res.item]))
+      .catch(console.error);
+  };
+  const editOrg = (id: number, d: Omit<Organization, "id" | "holdingId">) => {
+    const updated = { id, holdingId: holding.id, ...d };
+    setOrgs(prev => prev.map(o => o.id === id ? updated : o));
+    apiEditOrg(updated).catch(console.error);
+  };
+  const deleteOrg = (id: number) => {
     setOrgs(prev => prev.filter(o => o.id !== id));
+    apiDeleteOrg(id).catch(console.error);
+  };
 
   // ── Roles CRUD ───────────────────────────────────────────────────────────
-  const addRole = (d: Omit<Role, "id">) =>
-    setRoles(prev => [...prev, { id: maxId(prev) + 1, ...d }]);
-  const editRole = (id: number, d: Omit<Role, "id">) =>
-    setRoles(prev => prev.map(r => r.id === id ? { id, ...d } : r));
-  const deleteRole = (id: number) =>
+  const addRole = (d: Omit<Role, "id">) => {
+    apiAddRole(d).then(res => setRoles(prev => [...prev, res.item])).catch(console.error);
+  };
+  const editRole = (id: number, d: Omit<Role, "id">) => {
+    const updated = { id, ...d };
+    setRoles(prev => prev.map(r => r.id === id ? updated : r));
+    apiEditRole(updated).catch(console.error);
+  };
+  const deleteRole = (id: number) => {
     setRoles(prev => prev.filter(r => r.id !== id));
+    apiDeleteRole(id).catch(console.error);
+  };
 
   // ── Users CRUD ───────────────────────────────────────────────────────────
-  const addUser = (d: Omit<AppUser, "id" | "holdingId" | "lastLogin">) =>
-    setUsers(prev => [...prev, { id: maxId(prev) + 1, holdingId: holding.id, lastLogin: new Date().toISOString().slice(0, 10), ...d }]);
-  const editUser = (id: number, d: Partial<AppUser>) =>
+  const addUser = (d: Omit<AppUser, "id" | "holdingId" | "lastLogin">) => {
+    const payload = { holdingId: holding.id, lastLogin: new Date().toISOString().slice(0, 10), ...d };
+    apiAddUser(payload).then(res => setUsers(prev => [...prev, res.item])).catch(console.error);
+  };
+  const editUser = (id: number, d: Partial<AppUser>) => {
     setUsers(prev => prev.map(u => u.id === id ? { ...u, ...d } : u));
-  const deleteUser = (id: number) =>
+    apiEditUser(id, d).catch(console.error);
+  };
+  const deleteUser = (id: number) => {
     setUsers(prev => prev.filter(u => u.id !== id));
+    apiDeleteUser(id).catch(console.error);
+  };
 
   // ── Scoped domain data ───────────────────────────────────────────────────
   const locations = allLocations.filter(l => l.orgId === currentOrgId);
@@ -159,51 +221,59 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const fineReasons = allFineReasons.filter(r => r.orgId === currentOrgId);
   const fines = allFines.filter(f => f.orgId === currentOrgId);
 
-  const addLocation = (d: Omit<Location, "id" | "orgId">) =>
-    setAllLocations(prev => [...prev, { id: maxId(prev) + 1, orgId: currentOrgId, ...d }]);
-  const editLocation = (id: number, d: Omit<Location, "id" | "orgId">) =>
-    setAllLocations(prev => prev.map(l => l.id === id ? { id, orgId: currentOrgId, ...d } : l));
-  const deleteLocation = (id: number) =>
+  const addLocation = (d: Omit<Location, "id" | "orgId">) => {
+    apiAddLocation({ orgId: currentOrgId, ...d })
+      .then(res => setAllLocations(prev => [...prev, res.item]))
+      .catch(console.error);
+  };
+  const editLocation = (id: number, d: Omit<Location, "id" | "orgId">) => {
+    const updated = { id, orgId: currentOrgId, ...d };
+    setAllLocations(prev => prev.map(l => l.id === id ? updated : l));
+    apiEditLocation(updated).catch(console.error);
+  };
+  const deleteLocation = (id: number) => {
     setAllLocations(prev => prev.filter(l => l.id !== id));
+    apiDeleteLocation(id).catch(console.error);
+  };
 
-  const addEmployee = (d: Omit<Employee, "id" | "orgId">) =>
-    setAllEmployees(prev => [...prev, { id: maxId(prev) + 1, orgId: currentOrgId, ...d }]);
-  const editEmployee = (id: number, d: Omit<Employee, "id" | "orgId">) =>
-    setAllEmployees(prev => prev.map(e => e.id === id ? { id, orgId: currentOrgId, ...d } : e));
-  const deleteEmployee = (id: number) =>
+  const addEmployee = (d: Omit<Employee, "id" | "orgId">) => {
+    apiAddEmployee({ orgId: currentOrgId, ...d })
+      .then(res => setAllEmployees(prev => [...prev, res.item]))
+      .catch(console.error);
+  };
+  const editEmployee = (id: number, d: Omit<Employee, "id" | "orgId">) => {
+    const updated = { id, orgId: currentOrgId, ...d };
+    setAllEmployees(prev => prev.map(e => e.id === id ? updated : e));
+    apiEditEmployee(updated).catch(console.error);
+  };
+  const deleteEmployee = (id: number) => {
     setAllEmployees(prev => prev.filter(e => e.id !== id));
+    apiDeleteEmployee(id).catch(console.error);
+  };
 
   const assignPost = (
     postId: number,
     officerId: number | null,
     fine: Omit<FineRecord, "id" | "date" | "postId" | "orgId"> | null
   ) => {
-    // Определяем: новый сотрудник — на выходном/подработке?
-    const newEmp = officerId !== null
-      ? allEmployees.find(e => e.id === officerId)
-      : null;
+    const newEmp = officerId !== null ? allEmployees.find(e => e.id === officerId) : null;
     const isExtraShift = newEmp?.status === "off" || newEmp?.status === "extra";
+    const status: Post["status"] = officerId !== null ? "covered" : "vacant";
 
     setAllPosts(prev => prev.map(p => {
       if (p.id !== postId) return p;
-      const status: Post["status"] = officerId !== null ? "covered" : "vacant";
       return {
-        ...p,
-        officerId,
-        status,
-        isExtraShift: isExtraShift ?? false,
-        confirmedAt: null,
-        confirmedBy: null,
-        actualStartTime: null,
-        actualHours: null,
+        ...p, officerId, status, isExtraShift: isExtraShift ?? false,
+        confirmedAt: null, confirmedBy: null, actualStartTime: null, actualHours: null,
+        closedAt: null, closeReason: null, closeNote: null,
       };
     }));
+    apiAssignPost(postId, officerId, status, isExtraShift ?? false).catch(console.error);
 
     // Переводим сотрудника в статус "extra" если он выходной и его назначили
-    if (newEmp && (newEmp.status === "off")) {
-      setAllEmployees(prev => prev.map(e =>
-        e.id === newEmp.id ? { ...e, status: "extra" as const } : e
-      ));
+    if (newEmp && newEmp.status === "off") {
+      setAllEmployees(prev => prev.map(e => e.id === newEmp.id ? { ...e, status: "extra" as const } : e));
+      apiSetEmployeeStatus(newEmp.id, "extra").catch(console.error);
     }
 
     // При замене или снятии — возвращаем предыдущего "extra" → "off"
@@ -211,32 +281,31 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (post?.officerId && post.officerId !== officerId) {
       const prevEmp = allEmployees.find(e => e.id === post.officerId);
       if (prevEmp?.status === "extra") {
-        setAllEmployees(prev => prev.map(e =>
-          e.id === prevEmp.id ? { ...e, status: "off" as const } : e
-        ));
+        setAllEmployees(prev => prev.map(e => e.id === prevEmp.id ? { ...e, status: "off" as const } : e));
+        apiSetEmployeeStatus(prevEmp.id, "off").catch(console.error);
       }
     }
 
     if (fine) {
       const today = new Date().toISOString().slice(0, 10);
-      setAllFines(prev => [...prev, { id: maxId(prev) + 1, orgId: currentOrgId, date: today, postId, ...fine }]);
+      const record = { orgId: currentOrgId, date: today, postId, ...fine };
+      setAllFines(prev => [...prev, { id: maxId(prev) + 1, ...record }]);
+      apiAddFine(record).then(res => {
+        setAllFines(prev => prev.map(f => f.id === maxId(prev) ? res.item : f));
+      }).catch(console.error);
     }
   };
 
   // Оператор подтверждает фактическое заступление
   const confirmPost = (postId: number, actualStartTime: string, confirmedBy: string) => {
+    const confirmedAt = new Date().toISOString();
     setAllPosts(prev => prev.map(p =>
-      p.id !== postId ? p : {
-        ...p,
-        confirmedAt: new Date().toISOString(),
-        confirmedBy,
-        actualStartTime,
-        actualHours: null, // смена ещё не закрыта
-      }
+      p.id !== postId ? p : { ...p, confirmedAt, confirmedBy, actualStartTime, actualHours: null }
     ));
+    apiConfirmPost(postId, confirmedAt, confirmedBy, actualStartTime).catch(console.error);
   };
 
-  // Оператор закрывает смену — фиксирует фактически отработанные часы, причину, штраф
+  // Оператор закрывает смену — фиксирует часы, причину, штраф
   const closePost = (
     postId: number,
     actualHours: number,
@@ -248,29 +317,37 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setAllPosts(prev => prev.map(p =>
       p.id !== postId ? p : { ...p, actualHours, closedAt, closeReason: reason, closeNote: note || null }
     ));
+    apiClosePost(postId, actualHours, closedAt, reason, note || null).catch(console.error);
 
-    // Сотрудник со статусом "active" → "off" после завершения смены
+    // Сотрудник active/extra → off после завершения смены
     const post = allPosts.find(p => p.id === postId);
     if (post?.officerId) {
       const emp = allEmployees.find(e => e.id === post.officerId);
       if (emp && (emp.status === "active" || emp.status === "extra")) {
-        setAllEmployees(prev => prev.map(e =>
-          e.id === emp.id ? { ...e, status: "off" as const } : e
-        ));
+        setAllEmployees(prev => prev.map(e => e.id === emp.id ? { ...e, status: "off" as const } : e));
+        apiSetEmployeeStatus(emp.id, "off").catch(console.error);
       }
     }
 
-    // Штраф при закрытии
     if (fine) {
       const today = new Date().toISOString().slice(0, 10);
-      setAllFines(prev => [...prev, { id: maxId(prev) + 1, orgId: currentOrgId, date: today, postId, ...fine }]);
+      const record = { orgId: currentOrgId, date: today, postId, ...fine };
+      setAllFines(prev => [...prev, { id: maxId(prev) + 1, ...record }]);
+      apiAddFine(record).then(res => {
+        setAllFines(prev => prev.map(f => f.id === maxId(prev) ? res.item : f));
+      }).catch(console.error);
     }
   };
 
-  const setFineReasons = (reasons: FineReason[]) =>
+  const setFineReasons = (reasons: FineReason[]) => {
     setAllFineReasons(prev => [...prev.filter(r => r.orgId !== currentOrgId), ...reasons]);
+    apiReplaceFineReasons(currentOrgId, reasons)
+      .then(res => setAllFineReasons(prev => [...prev.filter(r => r.orgId !== currentOrgId), ...res.items]))
+      .catch(console.error);
+  };
 
   const value: AppContextValue = {
+    loading, loadError,
     session, login, logout, switchOrg, can, isSuperAdmin,
     holding, orgs, addOrg, editOrg, deleteOrg, currentOrg,
     roles, addRole, editRole, deleteRole,

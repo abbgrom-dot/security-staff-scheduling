@@ -2,45 +2,31 @@ import { useState } from "react";
 import { useApp } from "@/context/AppContext";
 import Icon from "@/components/ui/icon";
 
-// Demo credentials map: email → userId
-const DEMO_CREDS: Record<string, number> = {
-  "admin@securgroup.ru": 1,
-  "orlova@og-center.ru": 2,
-  "savin@og-center.ru":  3,
-  "karpova@og-sever.ru": 4,
-  "ryabov@og-yug.ru":    5,
-};
-
 export default function LoginScreen() {
-  const { users, orgs, login } = useApp();
+  const { login } = useApp();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
 
-    const userId = DEMO_CREDS[email.trim().toLowerCase()];
-    const user = users.find(u => u.id === userId);
-
-    if (!user || !user.isActive) {
-      setError("Неверный email или пользователь неактивен");
-      return;
-    }
     if (password.length < 1) {
       setError("Введите пароль");
       return;
     }
 
     setLoading(true);
-    setTimeout(() => {
-      const defaultOrg = user.orgIds[0];
-      login(user.id, defaultOrg);
+    try {
+      await login(email.trim().toLowerCase(), password);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Ошибка входа");
+    } finally {
       setLoading(false);
-    }, 600);
+    }
   };
 
   const demoUsers = [

@@ -1,0 +1,28 @@
+{
+  "tests": [
+    {
+      "name": "Load all data",
+      "method": "GET",
+      "path": "/",
+      "expectedStatus": 200,
+      "expectedBody": {"holding": {"id": 1}},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Add and cleanup employee",
+      "method": "POST",
+      "path": "/",
+      "body": {"entity": "employee", "action": "add", "data": {"orgId": 1, "name": "Тест Тестов", "rank": "Охранник", "status": "active"}},
+      "expectedStatus": 200,
+      "expectedBody": {"item": {"name": "Тест Тестов"}},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Unknown entity error",
+      "method": "POST",
+      "path": "/",
+      "body": {"entity": "nope", "action": "add", "data": {}},
+      "expectedStatus": 400
+    }
+  ]
+}

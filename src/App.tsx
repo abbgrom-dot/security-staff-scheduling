@@ -3030,9 +3030,32 @@ function Settings() {
 
 // ─── Shell ────────────────────────────────────────────────────────────────────
 function Shell() {
-  const { session, logout, can, fines, posts, holding, currentOrg, isSuperAdmin, switchOrg } = useApp();
+  const { session, logout, can, fines, posts, holding, currentOrg, isSuperAdmin, switchOrg, loading, loadError } = useApp();
   const [active, setActive] = useState<Section>("dashboard");
   const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  if (loading) return (
+    <div className="min-h-screen bg-background flex flex-col items-center justify-center gap-4">
+      <div className="w-16 h-16 rounded-2xl bg-primary/20 flex items-center justify-center">
+        <Icon name="Shield" size={32} className="text-primary" />
+      </div>
+      <div className="flex items-center gap-2 text-muted-foreground">
+        <Icon name="Loader2" size={16} className="animate-spin" />
+        <span className="text-sm">Загрузка данных...</span>
+      </div>
+    </div>
+  );
+
+  if (loadError) return (
+    <div className="min-h-screen bg-background flex flex-col items-center justify-center gap-4 p-4">
+      <Icon name="AlertTriangle" size={40} className="text-red-400" />
+      <p className="text-foreground font-medium">Не удалось загрузить данные</p>
+      <p className="text-sm text-muted-foreground text-center max-w-sm">{loadError}</p>
+      <button onClick={() => location.reload()} className="px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:opacity-90">
+        Повторить
+      </button>
+    </div>
+  );
 
   if (!session) return <LoginScreen />;
 
