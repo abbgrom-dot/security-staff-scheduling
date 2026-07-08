@@ -104,6 +104,7 @@ function LocationModal({ initial, onSave, onClose, title }: {
   const [form, setForm] = useState(initial ?? EMPTY_LOC);
   const set = (k: keyof typeof form, v: string | number) => setForm(f => ({ ...f, [k]: v }));
   const valid = form.name.trim().length > 0 && form.address.trim().length > 0;
+  const isEdit = initial !== null;
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
       <div className="bg-card border border-border rounded-2xl p-6 w-full max-w-lg section-enter" onClick={e => e.stopPropagation()}>
@@ -123,7 +124,10 @@ function LocationModal({ initial, onSave, onClose, title }: {
           <Field label="Адрес" req><input value={form.address} onChange={e => set("address", e.target.value)} placeholder="ул. Примерная, 1" className={inputCls} /></Field>
           <div className="grid grid-cols-3 gap-4">
             <Field label="Контакт"><input value={form.contact} onChange={e => set("contact", e.target.value)} placeholder="+7 900 000-00-00" className={inputCls} /></Field>
-            <Field label="Постов"><input type="number" min={1} max={99} value={form.posts} onChange={e => set("posts", parseInt(e.target.value) || 1)} className={inputCls} /></Field>
+            <Field label="Постов">
+              <input type="number" min={1} max={99} value={form.posts} disabled={isEdit} onChange={e => set("posts", parseInt(e.target.value) || 1)} className={inputCls + (isEdit ? " opacity-60 cursor-not-allowed" : "")} />
+              <p className="text-[10px] text-muted-foreground mt-1">{isEdit ? "Меняется через «Посты»" : "Создадутся «Пост 1»…"}</p>
+            </Field>
             <Field label="Тариф, ₽/час">
               <input type="number" min={0} step={10} value={form.hourlyRate} onChange={e => set("hourlyRate", parseInt(e.target.value) || 0)} className={inputCls} />
             </Field>
@@ -799,7 +803,7 @@ function Objects() {
                 </div>
                 {hasAlert && <div className="flex items-center gap-2 px-3 py-2 bg-red-500/10 border border-red-500/20 rounded-lg mb-3 text-xs text-red-400"><Icon name="AlertTriangle" size={13} /> Пост в тревоге</div>}
                 <div className="mb-3">
-                  <div className="flex justify-between text-xs mb-1.5"><span className="text-muted-foreground">Покрытие</span><span className="font-mono">{cov}/{lp.length > 0 ? lp.length : loc.posts}</span></div>
+                  <div className="flex justify-between text-xs mb-1.5"><span className="text-muted-foreground">Покрытие</span><span className="font-mono">{cov}/{lp.length}</span></div>
                   <div className="h-1.5 bg-muted rounded-full"><div className={`h-full rounded-full transition-all ${pct === 100 ? "bg-emerald-500" : pct >= 60 ? "bg-primary" : "bg-amber-500"}`} style={{ width: `${lp.length > 0 ? pct : 0}%` }} /></div>
                 </div>
                 {loc.contact && <p className="text-xs text-muted-foreground flex items-center gap-1 mb-4"><Icon name="Phone" size={11} /> {loc.contact}</p>}

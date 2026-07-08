@@ -238,8 +238,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const fines = allFines.filter(f => f.orgId === currentOrgId);
 
   const addLocation = (d: Omit<Location, "id" | "orgId">) => {
+    const postCount = Math.max(0, d.posts || 0);
     apiAddLocation({ orgId: currentOrgId, ...d })
-      .then(res => setAllLocations(prev => [...prev, res.item]))
+      .then(async res => {
+        const loc = res.item;
+        setAllLocations(prev => [...prev, loc]);
+        // Автосоздание постов по умолчанию: "Пост 1" ... "Пост N"
+        for (let i = 1; i <= postCount; i++) {
+          try {
+            const pr = await apiAddPost({ orgId: currentOrgId, status: "vacant", name: `Пост ${i}`, locationId: loc.id, time: "08:00 – 20:00" });
+            setAllPosts(prev => [...prev, pr.item]);
+          } catch (e) { console.error(e); }
+        }
+      })
       .catch(console.error);
   };
   const editLocation = (id: number, d: Omit<Location, "id" | "orgId">) => {
@@ -356,9 +367,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   // ── Post CRUD (structure, not shift ops) ──────────────────────────────────
+  // Синхронизирует поле posts у объекта с фактическим числом постов
+  const syncLocationPostCount = (locationId: number, count: number) => {
+    setAllLocations(prev => prev.map(l => l.id === locationId ? { ...l, posts: count } : l));
+    const loc = allLocations.find(l => l.id === locationId);
+    if (loc) {
+      apiEditLocation({ ...loc, posts: count }).catch(console.error);
+    }
+  };
+
   const addPost = (d: { name: string; locationId: number; time: string }) => {
     apiAddPost({ orgId: currentOrgId, status: "vacant", ...d })
-      .then(res => setAllPosts(prev => [...prev, res.item]))
+      .then(res => {
+        setAllPosts(prev => [...prev, res.item]);
+        const count = allPosts.filter(p => p.locationId === d.locationId).length + 1;
+        syncLocationPostCount(d.locationId, count);
+      })
       .catch(console.error);
   };
   const editPost = (id: number, d: { name: string; locationId: number; time: string }) => {
@@ -366,9 +390,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
     apiEditPost(id, d).catch(console.error);
   };
   const deletePost = (id: number) => {
+    const post = allPosts.find(p => p.id === id);
     setAllPosts(prev => prev.filter(p => p.id !== id));
     setAllFines(prev => prev.filter(f => f.postId !== id));
     apiDeletePost(id).catch(console.error);
+    if (post) {
+      const count = Math.max(0, allPosts.filter(p => p.locationId === post.locationId).length - 1);
+      syncLocationPostCount(post.locationId, count);
+    }
   };
 
   const setFineReasons = (reasons: FineReason[]) => {
