@@ -15,7 +15,8 @@ import {
   apiAddLocation, apiEditLocation, apiDeleteLocation,
   apiAddEmployee, apiEditEmployee, apiSetEmployeeStatus, apiDeleteEmployee,
   apiAssignPost, apiConfirmPost, apiClosePost,
-  apiReplaceFineReasons, apiAddFine,
+  apiAddPost, apiEditPost, apiDeletePost,
+  apiReplaceFineReasons, apiAddFine, apiEditHolding,
 } from "@/lib/api";
 
 interface AppContextValue {
@@ -33,6 +34,7 @@ interface AppContextValue {
 
   // Holding & Orgs
   holding: Holding;
+  editHolding: (d: { name: string; inn: string; logo?: string | null }) => void;
   orgs: Organization[];
   addOrg: (d: Omit<Organization, "id" | "holdingId">) => void;
   editOrg: (id: number, d: Omit<Organization, "id" | "holdingId">) => void;
@@ -67,6 +69,9 @@ interface AppContextValue {
   assignPost: (postId: number, officerId: number | null, fine: Omit<FineRecord, "id" | "date" | "postId" | "orgId"> | null) => void;
   confirmPost: (postId: number, actualStartTime: string, confirmedBy: string) => void;
   closePost: (postId: number, actualHours: number, reason: "auto" | "manual", note: string, fine: Omit<FineRecord, "id" | "date" | "postId" | "orgId"> | null) => void;
+  addPost: (d: { name: string; locationId: number; time: string }) => void;
+  editPost: (id: number, d: { name: string; locationId: number; time: string }) => void;
+  deletePost: (id: number) => void;
 
   fineReasons: FineReason[];
   setFineReasons: (reasons: FineReason[]) => void;
@@ -185,6 +190,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const deleteOrg = (id: number) => {
     setOrgs(prev => prev.filter(o => o.id !== id));
     apiDeleteOrg(id).catch(console.error);
+  };
+
+  // ── Holding ──────────────────────────────────────────────────────────────
+  const editHolding = (d: { name: string; inn: string; logo?: string | null }) => {
+    setHolding(prev => ({ ...prev, ...d, logo: d.logo ?? undefined }));
+    apiEditHolding({ id: holding.id, ...d }).catch(console.error);
   };
 
   // ── Roles CRUD ───────────────────────────────────────────────────────────
@@ -344,6 +355,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  // ── Post CRUD (structure, not shift ops) ──────────────────────────────────
+  const addPost = (d: { name: string; locationId: number; time: string }) => {
+    apiAddPost({ orgId: currentOrgId, status: "vacant", ...d })
+      .then(res => setAllPosts(prev => [...prev, res.item]))
+      .catch(console.error);
+  };
+  const editPost = (id: number, d: { name: string; locationId: number; time: string }) => {
+    setAllPosts(prev => prev.map(p => p.id === id ? { ...p, ...d } : p));
+    apiEditPost(id, d).catch(console.error);
+  };
+  const deletePost = (id: number) => {
+    setAllPosts(prev => prev.filter(p => p.id !== id));
+    setAllFines(prev => prev.filter(f => f.postId !== id));
+    apiDeletePost(id).catch(console.error);
+  };
+
   const setFineReasons = (reasons: FineReason[]) => {
     setAllFineReasons(prev => [...prev.filter(r => r.orgId !== currentOrgId), ...reasons]);
     apiReplaceFineReasons(currentOrgId, reasons)
@@ -354,12 +381,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const value: AppContextValue = {
     loading, loadError,
     session, login, logout, switchOrg, can, isSuperAdmin,
-    holding, orgs, addOrg, editOrg, deleteOrg, currentOrg,
+    holding, editHolding, orgs, addOrg, editOrg, deleteOrg, currentOrg,
     roles, addRole, editRole, deleteRole,
     users, addUser, editUser, deleteUser, changePassword,
     locations, addLocation, editLocation, deleteLocation,
     employees, addEmployee, editEmployee, deleteEmployee,
-    posts, assignPost, confirmPost, closePost,
+    posts, assignPost, confirmPost, closePost, addPost, editPost, deletePost,
     fineReasons, setFineReasons,
     fines,
     allLocations, allEmployees, allPosts, allFines,

@@ -77,7 +77,7 @@ def map_fine(r):
 def load_all(cur):
     cur.execute("SELECT * FROM holdings ORDER BY id LIMIT 1")
     h = cur.fetchone()
-    holding = {'id': h['id'], 'name': h['name'], 'inn': h['inn']} if h else None
+    holding = {'id': h['id'], 'name': h['name'], 'inn': h['inn'], 'logo': h.get('logo')} if h else None
 
     cur.execute("SELECT * FROM organizations ORDER BY id")
     orgs = [map_org(r) for r in cur.fetchall()]
@@ -278,6 +278,30 @@ def handle_mutation(cur, entity, action, d):
                 "UPDATE posts SET actual_hours=%s, closed_at=%s, close_reason=%s, close_note=%s WHERE id=%s RETURNING *",
                 (d['actualHours'], d['closedAt'], d['closeReason'], d.get('closeNote'), d['id']))
             return {'item': map_post(cur.fetchone())}
+        if action == 'add':
+            cur.execute(
+                "INSERT INTO posts (org_id, name, location_id, officer_id, time, status, is_extra_shift) "
+                "VALUES (%s,%s,%s,%s,%s,%s,%s) RETURNING *",
+                (d['orgId'], d['name'], d['locationId'], d.get('officerId'), d.get('time', ''),
+                 d.get('status', 'vacant'), d.get('isExtraShift', False)))
+            return {'item': map_post(cur.fetchone())}
+        if action == 'edit':
+            cur.execute(
+                "UPDATE posts SET name=%s, location_id=%s, time=%s WHERE id=%s RETURNING *",
+                (d['name'], d['locationId'], d.get('time', ''), d['id']))
+            return {'item': map_post(cur.fetchone())}
+        if action == 'delete':
+            cur.execute("DELETE FROM fines WHERE post_id=%s", (d['id'],))
+            cur.execute("DELETE FROM posts WHERE id=%s", (d['id'],))
+            return {'ok': True}
+
+    # ── Holding ───────────────────────────────────────────────────────────────
+    if entity == 'holding' and action == 'edit':
+        cur.execute(
+            "UPDATE holdings SET name=%s, inn=%s, logo=%s WHERE id=%s RETURNING *",
+            (d['name'], d.get('inn', ''), d.get('logo'), d['id']))
+        h = cur.fetchone()
+        return {'item': {'id': h['id'], 'name': h['name'], 'inn': h['inn'], 'logo': h['logo']}}
 
     # ── Fine Reasons (replace all for org) ────────────────────────────────────
     if entity == 'fineReasons' and action == 'replace':

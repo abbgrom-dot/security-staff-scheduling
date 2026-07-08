@@ -9,12 +9,12 @@
       "bodyMatcher": "partial"
     },
     {
-      "name": "Add and cleanup employee",
+      "name": "Add post",
       "method": "POST",
       "path": "/",
-      "body": {"entity": "employee", "action": "add", "data": {"orgId": 1, "name": "Тест Тестов", "rank": "Охранник", "status": "active"}},
+      "body": {"entity": "post", "action": "add", "data": {"orgId": 1, "name": "Тестовый пост", "locationId": 1, "time": "08:00 – 20:00", "status": "vacant"}},
       "expectedStatus": 200,
-      "expectedBody": {"item": {"name": "Тест Тестов"}},
+      "expectedBody": {"item": {"name": "Тестовый пост"}},
       "bodyMatcher": "partial"
     },
     {

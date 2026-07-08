@@ -2,10 +2,16 @@ import { useState, useRef, useEffect } from "react";
 import { useApp } from "@/context/AppContext";
 import Icon from "@/components/ui/icon";
 
-export default function OrgSwitcher() {
+export default function OrgSwitcher({ onSwitch }: { onSwitch?: (orgId: number) => void }) {
   const { session, orgs, switchOrg, isSuperAdmin } = useApp();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+
+  const doSwitch = (orgId: number) => {
+    if (onSwitch) onSwitch(orgId);
+    else switchOrg(orgId);
+    setOpen(false);
+  };
 
   const availableOrgs = session
     ? orgs.filter(o => session.user.orgIds.includes(o.id))
@@ -48,7 +54,7 @@ export default function OrgSwitcher() {
           {availableOrgs.map(org => (
             <button
               key={org.id}
-              onClick={() => { switchOrg(org.id); setOpen(false); }}
+              onClick={() => doSwitch(org.id)}
               className={`w-full flex items-center gap-3 px-3 py-2.5 hover:bg-muted/50 transition-colors text-left
                 ${org.id === current.id ? "bg-muted/30" : ""}`}
             >

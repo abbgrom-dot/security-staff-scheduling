@@ -95,6 +95,15 @@ export const apiConfirmPost = (id: number, confirmedAt: string, confirmedBy: str
   mutate<{ item: Post }>({ entity: "post", action: "confirm", data: { id, confirmedAt, confirmedBy, actualStartTime } });
 export const apiClosePost = (id: number, actualHours: number, closedAt: string, closeReason: string, closeNote: string | null) =>
   mutate<{ item: Post }>({ entity: "post", action: "close", data: { id, actualHours, closedAt, closeReason, closeNote } });
+export const apiAddPost = (d: { orgId: number; name: string; locationId: number; time: string; status: Post["status"] }) =>
+  mutate<{ item: Post }>({ entity: "post", action: "add", data: d });
+export const apiEditPost = (id: number, d: { name: string; locationId: number; time: string }) =>
+  mutate<{ item: Post }>({ entity: "post", action: "edit", data: { id, ...d } });
+export const apiDeletePost = (id: number) => mutate({ entity: "post", action: "delete", data: { id } });
+
+// ── Holding ──
+export const apiEditHolding = (d: { id: number; name: string; inn: string; logo?: string | null }) =>
+  mutate<{ item: Holding }>({ entity: "holding", action: "edit", data: d });
 
 // ── Fine reasons ──
 export const apiReplaceFineReasons = (orgId: number, reasons: FineReason[]) =>

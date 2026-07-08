@@ -155,6 +155,107 @@ function DeleteModal({ name, onConfirm, onClose }: { name: string; onConfirm: ()
   );
 }
 
+// ─── Posts Manager Modal ──────────────────────────────────────────────────────
+function PostsManagerModal({ location, onClose }: { location: Location; onClose: () => void }) {
+  const { posts, addPost, editPost, deletePost } = useApp();
+  const locPosts = posts.filter(p => p.locationId === location.id);
+
+  const [editingId, setEditingId] = useState<number | "new" | null>(null);
+  const [form, setForm] = useState({ name: "", time: "08:00 – 20:00" });
+  const [confirmDel, setConfirmDel] = useState<Post | null>(null);
+
+  const startAdd = () => { setForm({ name: "", time: "08:00 – 20:00" }); setEditingId("new"); };
+  const startEdit = (p: Post) => { setForm({ name: p.name, time: p.time }); setEditingId(p.id); };
+  const save = () => {
+    if (!form.name.trim()) return;
+    if (editingId === "new") addPost({ name: form.name.trim(), locationId: location.id, time: form.time });
+    else if (typeof editingId === "number") editPost(editingId, { name: form.name.trim(), locationId: location.id, time: form.time });
+    setEditingId(null);
+  };
+
+  const statusMeta = (s: Post["status"]) => s === "covered"
+    ? { t: "Закрыт", c: "text-emerald-400 bg-emerald-500/10" }
+    : s === "alert" ? { t: "Тревога", c: "text-red-400 bg-red-500/10" }
+    : { t: "Вакантен", c: "text-amber-400 bg-amber-500/10" };
+
+  return (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-card border border-border rounded-2xl w-full max-w-lg max-h-[90vh] flex flex-col section-enter" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between p-6 border-b border-border shrink-0">
+          <div>
+            <h3 className="font-bold text-lg text-foreground">Посты объекта</h3>
+            <p className="text-xs text-muted-foreground mt-0.5">{location.name} · {locPosts.length} постов</p>
+          </div>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground"><Icon name="X" size={20} /></button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-6 space-y-2">
+          {locPosts.length === 0 && editingId !== "new" && (
+            <p className="text-sm text-muted-foreground text-center py-6">Постов пока нет — добавьте первый</p>
+          )}
+
+          {locPosts.map(p => (
+            editingId === p.id ? (
+              <div key={p.id} className="border border-primary/40 bg-primary/5 rounded-xl p-3 space-y-2">
+                <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Название поста" className={inputCls} />
+                <input value={form.time} onChange={e => setForm(f => ({ ...f, time: e.target.value }))} placeholder="08:00 – 20:00" className={inputCls} />
+                <div className="flex gap-2">
+                  <button onClick={save} className="flex-1 py-2 rounded-lg bg-primary text-primary-foreground text-xs font-semibold hover:opacity-90">Сохранить</button>
+                  <button onClick={() => setEditingId(null)} className="px-4 py-2 rounded-lg bg-muted text-foreground text-xs hover:bg-secondary">Отмена</button>
+                </div>
+              </div>
+            ) : (
+              <div key={p.id} className="flex items-center gap-3 border border-border rounded-xl px-3 py-2.5">
+                <Icon name="MapPin" size={15} className="text-muted-foreground shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm text-foreground truncate">{p.name}</p>
+                  <p className="text-[11px] text-muted-foreground">{p.time}</p>
+                </div>
+                <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium shrink-0 ${statusMeta(p.status).c}`}>{statusMeta(p.status).t}</span>
+                <button onClick={() => startEdit(p)} className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground shrink-0"><Icon name="Pencil" size={13} /></button>
+                <button onClick={() => setConfirmDel(p)} className="p-1.5 rounded-lg hover:bg-red-500/10 text-muted-foreground hover:text-red-400 shrink-0"><Icon name="Trash2" size={13} /></button>
+              </div>
+            )
+          ))}
+
+          {editingId === "new" && (
+            <div className="border border-primary/40 bg-primary/5 rounded-xl p-3 space-y-2">
+              <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Название поста" className={inputCls} autoFocus />
+              <input value={form.time} onChange={e => setForm(f => ({ ...f, time: e.target.value }))} placeholder="08:00 – 20:00" className={inputCls} />
+              <div className="flex gap-2">
+                <button onClick={save} className="flex-1 py-2 rounded-lg bg-primary text-primary-foreground text-xs font-semibold hover:opacity-90">Добавить</button>
+                <button onClick={() => setEditingId(null)} className="px-4 py-2 rounded-lg bg-muted text-foreground text-xs hover:bg-secondary">Отмена</button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="p-4 border-t border-border shrink-0">
+          {editingId !== "new" && (
+            <button onClick={startAdd} className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:opacity-90">
+              <Icon name="Plus" size={16} /> Добавить пост
+            </button>
+          )}
+        </div>
+      </div>
+
+      {confirmDel && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[60] flex items-center justify-center p-4" onClick={() => setConfirmDel(null)}>
+          <div className="bg-card border border-red-500/20 rounded-2xl p-6 w-full max-w-sm section-enter" onClick={e => e.stopPropagation()}>
+            <div className="w-12 h-12 rounded-xl bg-red-500/10 flex items-center justify-center mb-4"><Icon name="Trash2" size={22} className="text-red-400" /></div>
+            <h3 className="font-bold text-lg text-foreground mb-2">Удалить пост?</h3>
+            <p className="text-sm text-muted-foreground mb-6">«{confirmDel.name}» будет удалён вместе со связанными штрафами. Действие нельзя отменить.</p>
+            <div className="flex gap-3">
+              <button onClick={() => { deletePost(confirmDel.id); setConfirmDel(null); }} className="flex-1 py-2.5 rounded-xl bg-red-500 text-white text-sm font-semibold hover:bg-red-600">Удалить</button>
+              <button onClick={() => setConfirmDel(null)} className="px-5 py-2.5 rounded-xl bg-muted text-foreground text-sm hover:bg-secondary">Отмена</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Assign Modal ─────────────────────────────────────────────────────────────
 // Статус-бейдж для сотрудника в списке назначения
 function empStatusLabel(status: import("@/types").Employee["status"]) {
@@ -666,7 +767,7 @@ function Dashboard() {
 function Objects() {
   const { locations, posts, addLocation, editLocation, deleteLocation, can } = useApp();
   const canEdit = can("objects:edit");
-  const [modal, setModal] = useState<"add" | "edit" | "delete" | null>(null);
+  const [modal, setModal] = useState<"add" | "edit" | "delete" | "posts" | null>(null);
   const [target, setTarget] = useState<Location | null>(null);
   const [search, setSearch] = useState("");
   const filtered = locations.filter(l => l.name.toLowerCase().includes(search.toLowerCase()) || l.address.toLowerCase().includes(search.toLowerCase()));
@@ -704,7 +805,8 @@ function Objects() {
                 {loc.contact && <p className="text-xs text-muted-foreground flex items-center gap-1 mb-4"><Icon name="Phone" size={11} /> {loc.contact}</p>}
                 {canEdit && (
                   <div className="flex gap-2 pt-3 border-t border-border/60">
-                    <button onClick={() => { setTarget(loc); setModal("edit"); }} className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg bg-muted hover:bg-secondary text-foreground text-xs font-medium transition-colors"><Icon name="Pencil" size={13} /> Редактировать</button>
+                    <button onClick={() => { setTarget(loc); setModal("posts"); }} className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary text-xs font-medium transition-colors"><Icon name="MapPin" size={13} /> Посты</button>
+                    <button onClick={() => { setTarget(loc); setModal("edit"); }} className="flex items-center justify-center px-3 py-2 rounded-lg bg-muted hover:bg-secondary text-foreground text-xs font-medium transition-colors"><Icon name="Pencil" size={13} /></button>
                     <button onClick={() => { setTarget(loc); setModal("delete"); }} className="flex items-center justify-center px-3 py-2 rounded-lg hover:bg-red-500/10 text-muted-foreground hover:text-red-400 text-xs transition-colors"><Icon name="Trash2" size={13} /></button>
                   </div>
                 )}
@@ -716,6 +818,7 @@ function Objects() {
       {modal === "add" && <LocationModal title="Новый объект" initial={null} onSave={d => { addLocation(d); close(); }} onClose={close} />}
       {modal === "edit" && target && <LocationModal title={`Редактировать — ${target.name}`} initial={target} onSave={d => { editLocation(target.id, d); close(); }} onClose={close} />}
       {modal === "delete" && target && <DeleteModal name={target.name} onConfirm={() => { deleteLocation(target.id); close(); }} onClose={close} />}
+      {modal === "posts" && target && <PostsManagerModal location={target} onClose={close} />}
     </div>
   );
 }
@@ -3161,14 +3264,16 @@ function Shell() {
         {/* Holding header */}
         <div className="px-5 py-4 border-b border-sidebar-border">
           <div className="flex items-center gap-3 mb-3">
-            <div className="w-9 h-9 rounded-xl bg-primary/20 flex items-center justify-center shrink-0"><Icon name="Shield" size={18} className="text-primary" /></div>
+            {holding.logo
+              ? <img src={holding.logo} alt="" className="w-9 h-9 rounded-xl object-cover shrink-0" />
+              : <div className="w-9 h-9 rounded-xl bg-primary/20 flex items-center justify-center shrink-0"><Icon name="Shield" size={18} className="text-primary" /></div>}
             <div className="flex-1 min-w-0">
               <p className="font-bold text-foreground text-sm truncate">{holding.name}</p>
               <p className="text-[10px] text-muted-foreground font-mono">ИНН {holding.inn}</p>
             </div>
           </div>
           {/* Org switcher */}
-          <OrgSwitcher />
+          <OrgSwitcher onSwitch={handleSwitchOrg} />
         </div>
 
         <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
