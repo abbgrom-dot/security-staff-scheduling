@@ -1,27 +1,48 @@
 {
   "tests": [
     {
-      "name": "Login superadmin",
+      "name": "Login superadmin correct password",
       "method": "POST",
       "path": "/",
-      "body": {"email": "admin@securgroup.ru", "password": "any"},
+      "body": {"action": "login", "email": "admin@securgroup.ru", "password": "demo1234"},
       "expectedStatus": 200,
       "expectedBody": {"user": {"id": 1}},
       "bodyMatcher": "partial"
     },
     {
+      "name": "Login wrong password",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "login", "email": "admin@securgroup.ru", "password": "wrongpass"},
+      "expectedStatus": 401
+    },
+    {
       "name": "Login unknown email",
       "method": "POST",
       "path": "/",
-      "body": {"email": "nobody@example.com", "password": "any"},
+      "body": {"action": "login", "email": "nobody@example.com", "password": "demo1234"},
       "expectedStatus": 401
     },
     {
       "name": "Login inactive user",
       "method": "POST",
       "path": "/",
-      "body": {"email": "ryabov@og-yug.ru", "password": "any"},
+      "body": {"action": "login", "email": "ryabov@og-yug.ru", "password": "demo1234"},
       "expectedStatus": 403
+    },
+    {
+      "name": "Change password wrong current",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "changePassword", "userId": 1, "currentPassword": "nope", "newPassword": "newpass123"},
+      "expectedStatus": 401
+    },
+    {
+      "name": "Change password too short",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "changePassword", "userId": 1, "currentPassword": "demo1234", "newPassword": "123"},
+      "expectedStatus": 400
     }
   ]
 }

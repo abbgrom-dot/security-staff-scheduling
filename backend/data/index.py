@@ -1,7 +1,18 @@
 import json
 import os
+import hashlib
+import binascii
+import secrets
 import psycopg2
 import psycopg2.extras
+
+PW_ITERATIONS = 100000
+
+
+def hash_password(password: str) -> str:
+    salt = secrets.token_bytes(16)
+    dk = hashlib.pbkdf2_hmac('sha256', password.encode(), salt, PW_ITERATIONS)
+    return f"pbkdf2_sha256${PW_ITERATIONS}${binascii.hexlify(salt).decode()}${binascii.hexlify(dk).decode()}"
 
 CORS = {
     'Access-Control-Allow-Origin': '*',
@@ -168,12 +179,13 @@ def handle_mutation(cur, entity, action, d):
     # ── Users ─────────────────────────────────────────────────────────────────
     if entity == 'user':
         if action == 'add':
+            pw = d.get('password') or 'demo1234'
             cur.execute(
-                "INSERT INTO app_users (holding_id, org_ids, name, email, phone, avatar_initials, role_ids, is_active, last_login) "
-                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *",
+                "INSERT INTO app_users (holding_id, org_ids, name, email, phone, avatar_initials, role_ids, is_active, last_login, password_hash) "
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *",
                 (d['holdingId'], json.dumps(d.get('orgIds', [])), d['name'], d['email'], d.get('phone', ''),
                  d.get('avatarInitials', ''), json.dumps(d.get('roleIds', [])), d.get('isActive', True),
-                 d.get('lastLogin', '')))
+                 d.get('lastLogin', ''), hash_password(pw)))
             return {'item': map_user(cur.fetchone())}
         if action == 'edit':
             cur.execute("SELECT * FROM app_users WHERE id=%s", (d['id'],))

@@ -22,11 +22,21 @@ export async function apiLogin(email: string, password: string): Promise<AppUser
   const r = await fetch(AUTH_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify({ action: "login", email, password }),
   });
   const data = await r.json();
   if (!r.ok) throw new Error(data.error || "Ошибка входа");
   return data.user as AppUser;
+}
+
+export async function apiChangePassword(userId: number, currentPassword: string, newPassword: string): Promise<void> {
+  const r = await fetch(AUTH_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "changePassword", userId, currentPassword, newPassword }),
+  });
+  const data = await r.json();
+  if (!r.ok) throw new Error(data.error || "Ошибка смены пароля");
 }
 
 export async function apiLoadAll(): Promise<AllData> {
@@ -63,7 +73,7 @@ export const apiEditRole = (d: Role) => mutate<{ item: Role }>({ entity: "role",
 export const apiDeleteRole = (id: number) => mutate({ entity: "role", action: "delete", data: { id } });
 
 // ── Users ──
-export const apiAddUser = (d: Omit<AppUser, "id">) => mutate<{ item: AppUser }>({ entity: "user", action: "add", data: d });
+export const apiAddUser = (d: Omit<AppUser, "id"> & { password?: string }) => mutate<{ item: AppUser }>({ entity: "user", action: "add", data: d });
 export const apiEditUser = (id: number, d: Partial<AppUser>) => mutate<{ item: AppUser }>({ entity: "user", action: "edit", data: { id, ...d } });
 export const apiDeleteUser = (id: number) => mutate({ entity: "user", action: "delete", data: { id } });
 

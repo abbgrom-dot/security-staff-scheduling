@@ -104,7 +104,7 @@ function RoleModal({ role, onSave, onClose }: {
 // ─── User Modal ───────────────────────────────────────────────────────────────
 function UserModal({ user, onSave, onClose }: {
   user: AppUser | null;
-  onSave: (d: Omit<AppUser, "id" | "holdingId" | "lastLogin">) => void;
+  onSave: (d: Omit<AppUser, "id" | "holdingId" | "lastLogin"> & { password?: string }) => void;
   onClose: () => void;
 }) {
   const { orgs, roles } = useApp();
@@ -112,9 +112,12 @@ function UserModal({ user, onSave, onClose }: {
   const [name, setName] = useState(user?.name ?? "");
   const [email, setEmail] = useState(user?.email ?? "");
   const [phone, setPhone] = useState(user?.phone ?? "");
+  const [password, setPassword] = useState("");
   const [selectedOrgs, setSelectedOrgs] = useState<number[]>(user?.orgIds ?? []);
   const [selectedRoles, setSelectedRoles] = useState<number[]>(user?.roleIds ?? []);
   const [isActive, setIsActive] = useState(user?.isActive ?? true);
+
+  const isNew = !user;
 
   const toggleOrg = (id: number) => setSelectedOrgs(prev =>
     prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
@@ -122,7 +125,8 @@ function UserModal({ user, onSave, onClose }: {
     prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
 
   const initials = name.trim().split(/\s+/).map(w => w[0] ?? "").join("").slice(0, 2).toUpperCase();
-  const valid = name.trim().length > 0 && email.includes("@") && selectedOrgs.length > 0 && selectedRoles.length > 0;
+  const passwordValid = !isNew || password.length === 0 || password.length >= 6;
+  const valid = name.trim().length > 0 && email.includes("@") && selectedOrgs.length > 0 && selectedRoles.length > 0 && passwordValid;
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
@@ -144,6 +148,15 @@ function UserModal({ user, onSave, onClose }: {
           <Field label="Телефон">
             <input value={phone} onChange={e => setPhone(e.target.value)} placeholder="+7 900 000-00-00" className={inputCls} />
           </Field>
+
+          {isNew && (
+            <Field label="Пароль">
+              <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Оставьте пустым для demo1234" className={inputCls} />
+              <p className={`text-xs mt-1 ${passwordValid ? "text-muted-foreground" : "text-red-400"}`}>
+                {password.length === 0 ? "Если не указан — будет установлен пароль demo1234" : "Минимум 6 символов"}
+              </p>
+            </Field>
+          )}
 
           <Field label="Организации (доступ)" required>
             <div className="space-y-1.5 mt-1">
@@ -202,7 +215,7 @@ function UserModal({ user, onSave, onClose }: {
 
         <div className="flex gap-3 p-6 border-t border-border shrink-0">
           <button
-            onClick={() => valid && onSave({ name, email, phone, orgIds: selectedOrgs, roleIds: selectedRoles, isActive, avatarInitials: initials || "??" })}
+            onClick={() => valid && onSave({ name, email, phone, orgIds: selectedOrgs, roleIds: selectedRoles, isActive, avatarInitials: initials || "??", ...(isNew && password ? { password } : {}) })}
             disabled={!valid}
             className="flex-1 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
           >

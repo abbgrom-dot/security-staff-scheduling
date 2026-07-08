@@ -11,7 +11,7 @@ import {
   apiLoadAll, apiLogin,
   apiAddOrg, apiEditOrg, apiDeleteOrg,
   apiAddRole, apiEditRole, apiDeleteRole,
-  apiAddUser, apiEditUser, apiDeleteUser,
+  apiAddUser, apiEditUser, apiDeleteUser, apiChangePassword,
   apiAddLocation, apiEditLocation, apiDeleteLocation,
   apiAddEmployee, apiEditEmployee, apiSetEmployeeStatus, apiDeleteEmployee,
   apiAssignPost, apiConfirmPost, apiClosePost,
@@ -47,9 +47,10 @@ interface AppContextValue {
 
   // Users
   users: AppUser[];
-  addUser: (d: Omit<AppUser, "id" | "holdingId" | "lastLogin">) => void;
+  addUser: (d: Omit<AppUser, "id" | "holdingId" | "lastLogin"> & { password?: string }) => void;
   editUser: (id: number, d: Partial<AppUser>) => void;
   deleteUser: (id: number) => void;
+  changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
 
   // Domain (scoped to currentOrgId)
   locations: Location[];
@@ -201,7 +202,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   // ── Users CRUD ───────────────────────────────────────────────────────────
-  const addUser = (d: Omit<AppUser, "id" | "holdingId" | "lastLogin">) => {
+  const addUser = (d: Omit<AppUser, "id" | "holdingId" | "lastLogin"> & { password?: string }) => {
     const payload = { holdingId: holding.id, lastLogin: new Date().toISOString().slice(0, 10), ...d };
     apiAddUser(payload).then(res => setUsers(prev => [...prev, res.item])).catch(console.error);
   };
@@ -212,6 +213,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const deleteUser = (id: number) => {
     setUsers(prev => prev.filter(u => u.id !== id));
     apiDeleteUser(id).catch(console.error);
+  };
+  const changePassword = async (currentPassword: string, newPassword: string) => {
+    if (!session) throw new Error("Нет активной сессии");
+    await apiChangePassword(session.user.id, currentPassword, newPassword);
   };
 
   // ── Scoped domain data ───────────────────────────────────────────────────
@@ -351,7 +356,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     session, login, logout, switchOrg, can, isSuperAdmin,
     holding, orgs, addOrg, editOrg, deleteOrg, currentOrg,
     roles, addRole, editRole, deleteRole,
-    users, addUser, editUser, deleteUser,
+    users, addUser, editUser, deleteUser, changePassword,
     locations, addLocation, editLocation, deleteLocation,
     employees, addEmployee, editEmployee, deleteEmployee,
     posts, assignPost, confirmPost, closePost,

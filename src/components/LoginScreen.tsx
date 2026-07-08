@@ -70,7 +70,7 @@ export default function LoginScreen() {
                 type="password"
                 value={password}
                 onChange={e => setPassword(e.target.value)}
-                placeholder="Любой пароль (демо)"
+                placeholder="demo1234"
                 autoComplete="current-password"
                 className="w-full bg-muted border border-border rounded-xl px-4 py-2.5 text-sm text-foreground focus:outline-none focus:border-primary/60 transition-colors"
               />
@@ -95,12 +95,12 @@ export default function LoginScreen() {
 
         {/* Demo hint */}
         <div className="mt-4 bg-card border border-border rounded-2xl p-5">
-          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Демо-аккаунты (пароль — любой)</p>
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Демо-аккаунты (пароль — demo1234)</p>
           <div className="space-y-2">
             {demoUsers.map(d => (
               <button
                 key={d.email}
-                onClick={() => setEmail(d.email)}
+                onClick={() => { setEmail(d.email); setPassword("demo1234"); }}
                 className="w-full flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-muted/60 transition-colors text-left group"
               >
                 <div className="w-7 h-7 rounded-full bg-primary/15 flex items-center justify-center shrink-0">
