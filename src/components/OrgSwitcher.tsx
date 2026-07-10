@@ -47,7 +47,7 @@ export default function OrgSwitcher({ onSwitch }: { onSwitch?: (orgId: number) =
       </button>
 
       {open && (
-        <div className="absolute bottom-full left-0 right-0 mb-1 bg-popover border border-border rounded-xl shadow-xl overflow-hidden z-50">
+        <div className="absolute top-full left-0 right-0 mt-1 bg-popover border border-border rounded-xl shadow-xl overflow-y-auto max-h-[60vh] z-50">
           <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider px-3 pt-3 pb-1.5">
             {isSuperAdmin() ? "Все организации холдинга" : "Ваши организации"}
           </p>
