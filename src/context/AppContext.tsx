@@ -17,6 +17,7 @@ import {
   apiAssignPost, apiConfirmPost, apiClosePost,
   apiAddPost, apiEditPost, apiDeletePost,
   apiReplaceFineReasons, apiAddFine, apiEditHolding,
+  setApiUser,
 } from "@/lib/api";
 
 interface AppContextValue {
@@ -29,8 +30,11 @@ interface AppContextValue {
   login: (email: string, password: string) => Promise<void>;
   logout: () => void;
   switchOrg: (orgId: number) => void;
-  can: (p: Permission) => boolean;
+  can: (p: Permission, orgId?: number) => boolean;
+  canAny: (perms: Permission[], orgId?: number) => boolean;
+  canAll: (perms: Permission[], orgId?: number) => boolean;
   isSuperAdmin: () => boolean;
+  superAdminCount: () => number;
 
   // Holding & Orgs
   holding: Holding;
@@ -146,10 +150,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return exists ? prev.map(u => u.id === user.id ? user : u) : [...prev, user];
     });
     const defaultOrg = user.orgIds[0];
+    setApiUser(user.id);
     setSession({ user, currentOrgId: defaultOrg });
   };
 
-  const logout = () => setSession(null);
+  const logout = () => { setApiUser(null); setSession(null); };
 
   const switchOrg = (orgId: number) => {
     if (!session) return;
@@ -157,24 +162,41 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   // ── Permissions ──────────────────────────────────────────────────────────
-  const getUserPermissions = (user: AppUser): Set<Permission> => {
+  // Роль действует в организации, если она холдинговая (orgId === null)
+  // либо явно привязана к этой организации (orgId === orgId).
+  const getUserPermissions = (user: AppUser, orgId?: number): Set<Permission> => {
     const perms = new Set<Permission>();
     user.roleIds.forEach(rid => {
       const role = roles.find(r => r.id === rid);
-      role?.permissions.forEach(p => perms.add(p));
+      if (!role) return;
+      if (orgId !== undefined && role.orgId !== null && role.orgId !== orgId) return;
+      role.permissions.forEach(p => perms.add(p));
     });
     return perms;
   };
 
-  const can = (p: Permission): boolean => {
+  // Права проверяются в контексте активной организации.
+  // Явно переданный orgId переопределяет активную организацию.
+  const can = (p: Permission, orgId?: number): boolean => {
     if (!session) return false;
-    return getUserPermissions(session.user).has(p);
+    const scope = orgId ?? session.currentOrgId;
+    return getUserPermissions(session.user, scope).has(p);
   };
+
+  const canAny = (perms: Permission[], orgId?: number): boolean => perms.some(p => can(p, orgId));
+  const canAll = (perms: Permission[], orgId?: number): boolean => perms.every(p => can(p, orgId));
+
+  // Суперадмин — глобальная роль холдинга, не зависит от активной организации.
+  const userIsSuperAdmin = (user: AppUser) =>
+    user.roleIds.some(rid => roles.find(r => r.id === rid)?.permissions.includes("holding:view"));
 
   const isSuperAdmin = () => {
     if (!session) return false;
-    return session.user.roleIds.some(rid => roles.find(r => r.id === rid)?.permissions.includes("holding:view"));
+    return userIsSuperAdmin(session.user);
   };
+
+  // Кол-во активных суперадминов в холдинге — для защиты от самоблокировки.
+  const superAdminCount = () => users.filter(u => u.isActive && userIsSuperAdmin(u)).length;
 
   // ── Orgs CRUD ────────────────────────────────────────────────────────────
   const addOrg = (d: Omit<Organization, "id" | "holdingId">) => {
@@ -409,7 +431,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const value: AppContextValue = {
     loading, loadError,
-    session, login, logout, switchOrg, can, isSuperAdmin,
+    session, login, logout, switchOrg, can, canAny, canAll, isSuperAdmin, superAdminCount,
     holding, editHolding, orgs, addOrg, editOrg, deleteOrg, currentOrg,
     roles, addRole, editRole, deleteRole,
     users, addUser, editUser, deleteUser, changePassword,

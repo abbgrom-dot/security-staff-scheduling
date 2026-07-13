@@ -6,6 +6,11 @@ import type {
 const AUTH_URL = "https://functions.poehali.dev/bc06acd2-de7b-40ab-9289-ad071f198ef2";
 const DATA_URL = "https://functions.poehali.dev/b6898e8b-e3eb-42fa-aa4b-67c62a8eb31f";
 
+// Идентификатор текущего пользователя — отправляется с каждой мутацией,
+// чтобы бэкенд мог проверить права на сервере (не доверяя фронту).
+let currentUserId: number | null = null;
+export function setApiUser(id: number | null) { currentUserId = id; }
+
 export interface AllData {
   holding: Holding;
   orgs: Organization[];
@@ -52,9 +57,11 @@ type Mutation = {
 };
 
 async function mutate<T = unknown>(m: Mutation): Promise<T> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (currentUserId != null) headers["X-User-Id"] = String(currentUserId);
   const r = await fetch(DATA_URL, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers,
     body: JSON.stringify(m),
   });
   const data = await r.json();

@@ -21,6 +21,115 @@ CORS = {
     'Content-Type': 'application/json',
 }
 
+# ── Права, необходимые для каждой мутации (entity/action → permission) ────────
+REQUIRED_PERM = {
+    ('org', 'add'): 'holding:view',
+    ('org', 'edit'): 'holding:view',
+    ('org', 'delete'): 'holding:view',
+    ('holding', 'edit'): 'holding:view',
+    ('role', 'add'): 'roles:edit',
+    ('role', 'edit'): 'roles:edit',
+    ('role', 'delete'): 'roles:edit',
+    ('user', 'add'): 'users:edit',
+    ('user', 'edit'): 'users:edit',
+    ('user', 'delete'): 'users:edit',
+    ('location', 'add'): 'objects:edit',
+    ('location', 'edit'): 'objects:edit',
+    ('location', 'delete'): 'objects:edit',
+    ('post', 'add'): 'objects:edit',
+    ('post', 'edit'): 'objects:edit',
+    ('post', 'delete'): 'objects:edit',
+    ('post', 'assign'): 'placements:edit',
+    ('post', 'confirm'): 'placements:edit',
+    ('post', 'close'): 'placements:edit',
+    ('employee', 'add'): 'employees:edit',
+    ('employee', 'edit'): 'employees:edit',
+    ('employee', 'setStatus'): 'employees:edit',
+    ('employee', 'delete'): 'employees:edit',
+    ('fineReasons', 'replace'): 'fines:edit',
+    ('fine', 'add'): 'fines:edit',
+}
+
+
+def get_user_permissions(cur, user_id):
+    '''Собирает множество прав пользователя из его ролей (данные из БД, не с фронта).'''
+    cur.execute("SELECT role_ids, is_active FROM app_users WHERE id=%s", (user_id,))
+    row = cur.fetchone()
+    if not row or not row['is_active']:
+        return set(), False
+    role_ids = row['role_ids'] or []
+    if not role_ids:
+        return set(), True
+    cur.execute("SELECT permissions FROM roles WHERE id = ANY(%s)", (list(role_ids),))
+    perms = set()
+    for r in cur.fetchall():
+        for p in (r['permissions'] or []):
+            perms.add(p)
+    return perms, True
+
+
+def check_permission(cur, user_id, entity, action):
+    '''Возвращает (ok, error). Проверяет право на сервере перед мутацией.'''
+    required = REQUIRED_PERM.get((entity, action))
+    if required is None:
+        return True, None  # неизвестная пара обрабатывается ниже как обычно
+    if user_id is None:
+        return False, 'Не авторизован'
+    perms, active = get_user_permissions(cur, user_id)
+    if not active:
+        return False, 'Учётная запись заблокирована'
+    if required not in perms:
+        return False, 'Недостаточно прав'
+    return True, None
+
+
+def _role_ids_with_perm(cur, perm):
+    cur.execute("SELECT id FROM roles WHERE permissions @> %s::jsonb", (json.dumps([perm]),))
+    return [r['id'] for r in cur.fetchall()]
+
+
+def _active_super_admins(cur):
+    '''ID активных пользователей с правом holding:view (суперадмины).'''
+    sa_role_ids = set(_role_ids_with_perm(cur, 'holding:view'))
+    if not sa_role_ids:
+        return []
+    # role_ids хранится как JSONB (список id) — фильтруем на стороне Python.
+    cur.execute("SELECT id, role_ids FROM app_users WHERE is_active = TRUE")
+    result = []
+    for r in cur.fetchall():
+        if set(r['role_ids'] or []) & sa_role_ids:
+            result.append(r['id'])
+    return result
+
+
+def guard_super_admin(cur, entity, action, d, user_id):
+    '''Не даёт удалить/деактивировать последнего суперадмина и заблокировать себя.'''
+    if entity != 'user':
+        return None
+    target_id = d.get('id')
+    if target_id is None:
+        return None
+
+    supers = set(_active_super_admins(cur))
+
+    if action == 'delete':
+        if user_id is not None and target_id == user_id:
+            return 'Нельзя удалить собственную учётную запись'
+        if target_id in supers and len(supers) <= 1:
+            return 'Нельзя удалить последнего суперадминистратора'
+
+    if action == 'edit':
+        # Блокировка (is_active=false) или снятие админ-роли с последнего суперадмина
+        sa_role_ids = set(_role_ids_with_perm(cur, 'holding:view'))
+        new_is_active = d.get('isActive', True)
+        removes_admin = 'roleIds' in d and not (set(d.get('roleIds') or []) & sa_role_ids)
+        if target_id in supers and len(supers) <= 1 and (new_is_active is False or removes_admin):
+            return 'Нельзя лишить прав последнего суперадминистратора'
+        if user_id is not None and target_id == user_id and new_is_active is False:
+            return 'Нельзя заблокировать собственную учётную запись'
+
+    return None
+
 
 def resp(status, body):
     return {'statusCode': status, 'headers': CORS, 'body': json.dumps(body, default=str)}
@@ -122,6 +231,20 @@ def handler(event: dict, context) -> dict:
         entity = body.get('entity')
         action = body.get('action')
         d = body.get('data') or {}
+
+        # ── Проверка прав на сервере ──────────────────────────────────────────
+        headers = event.get('headers') or {}
+        raw_uid = headers.get('X-User-Id') or headers.get('x-user-id')
+        user_id = int(raw_uid) if raw_uid not in (None, '') else None
+
+        ok, err = check_permission(cur, user_id, entity, action)
+        if not ok:
+            return resp(403, {'error': err})
+
+        # ── Защита от самоблокировки / потери последнего суперадмина ──────────
+        guard_err = guard_super_admin(cur, entity, action, d, user_id)
+        if guard_err:
+            return resp(403, {'error': guard_err})
 
         result = handle_mutation(cur, entity, action, d)
         conn.commit()

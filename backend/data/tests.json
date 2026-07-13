@@ -9,18 +9,35 @@
       "bodyMatcher": "partial"
     },
     {
-      "name": "Add post",
+      "name": "Add post as superadmin",
       "method": "POST",
       "path": "/",
+      "headers": {"X-User-Id": "1"},
       "body": {"entity": "post", "action": "add", "data": {"orgId": 1, "name": "Тестовый пост", "locationId": 1, "time": "08:00 – 20:00", "status": "vacant"}},
       "expectedStatus": 200,
       "expectedBody": {"item": {"name": "Тестовый пост"}},
       "bodyMatcher": "partial"
     },
     {
+      "name": "Add post without user forbidden",
+      "method": "POST",
+      "path": "/",
+      "body": {"entity": "post", "action": "add", "data": {"orgId": 1, "name": "Без прав", "locationId": 1, "time": "08:00 – 20:00", "status": "vacant"}},
+      "expectedStatus": 403
+    },
+    {
+      "name": "Cannot delete self",
+      "method": "POST",
+      "path": "/",
+      "headers": {"X-User-Id": "1"},
+      "body": {"entity": "user", "action": "delete", "data": {"id": 1}},
+      "expectedStatus": 403
+    },
+    {
       "name": "Unknown entity error",
       "method": "POST",
       "path": "/",
+      "headers": {"X-User-Id": "1"},
       "body": {"entity": "nope", "action": "add", "data": {}},
       "expectedStatus": 400
     }

@@ -102,10 +102,11 @@ function RoleModal({ role, onSave, onClose }: {
 }
 
 // ─── User Modal ───────────────────────────────────────────────────────────────
-function UserModal({ user, onSave, onClose }: {
+function UserModal({ user, onSave, onClose, locked = false }: {
   user: AppUser | null;
   onSave: (d: Omit<AppUser, "id" | "holdingId" | "lastLogin"> & { password?: string }) => void;
   onClose: () => void;
+  locked?: boolean;
 }) {
   const { orgs, roles } = useApp();
 
@@ -202,11 +203,12 @@ function UserModal({ user, onSave, onClose }: {
           <div className="flex items-center justify-between px-3 py-3 bg-muted/40 rounded-xl">
             <div>
               <p className="text-sm font-medium text-foreground">Активен</p>
-              <p className="text-xs text-muted-foreground">Может входить в систему</p>
+              <p className="text-xs text-muted-foreground">{locked ? "Нельзя заблокировать: последний суперадмин или вы сами" : "Может входить в систему"}</p>
             </div>
             <button
-              onClick={() => setIsActive(v => !v)}
-              className={`w-11 h-6 rounded-full transition-colors relative ${isActive ? "bg-primary" : "bg-muted border border-border"}`}
+              onClick={() => { if (!locked) setIsActive(v => !v); }}
+              disabled={locked}
+              className={`w-11 h-6 rounded-full transition-colors relative ${isActive ? "bg-primary" : "bg-muted border border-border"} ${locked ? "opacity-50 cursor-not-allowed" : ""}`}
             >
               <div className={`w-4.5 h-4.5 absolute top-0.5 rounded-full bg-white shadow transition-all ${isActive ? "left-[calc(100%-1.25rem-0.125rem)]" : "left-0.5"}`} style={{ width: "18px", height: "18px" }} />
             </button>
@@ -249,7 +251,16 @@ function ConfirmDelete({ label, onConfirm, onClose }: { label: string; onConfirm
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 export default function UsersSection() {
-  const { users, addUser, editUser, deleteUser, roles, addRole, editRole, deleteRole, orgs, can } = useApp();
+  const { users, addUser, editUser, deleteUser, roles, addRole, editRole, deleteRole, orgs, can, session, superAdminCount } = useApp();
+
+  // Роль суперадмина — та, что содержит право "holding:view".
+  const userIsSuperAdmin = (u: AppUser) =>
+    u.roleIds.some(rid => roles.find(r => r.id === rid)?.permissions.includes("holding:view"));
+  // Нельзя трогать последнего активного суперадмина (иначе холдинг останется без администратора).
+  const isLastSuperAdmin = (u: AppUser) => u.isActive && userIsSuperAdmin(u) && superAdminCount() <= 1;
+  // Себя самого удалять нельзя (защита от самоблокировки).
+  const isSelf = (u: AppUser) => session?.user.id === u.id;
+  const isProtected = (u: AppUser) => isLastSuperAdmin(u) || isSelf(u);
 
   const [tab, setTab] = useState<"users" | "roles">("users");
 
@@ -359,9 +370,18 @@ export default function UsersSection() {
                             <button onClick={() => { setTargetUser(u); setUserModal("edit"); }} className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors">
                               <Icon name="Pencil" size={14} />
                             </button>
-                            <button onClick={() => { setTargetUser(u); setUserModal("delete"); }} className="p-1.5 rounded-lg hover:bg-red-500/10 text-muted-foreground hover:text-red-400 transition-colors">
-                              <Icon name="Trash2" size={14} />
-                            </button>
+                            {isProtected(u) ? (
+                              <span
+                                title={isLastSuperAdmin(u) ? "Нельзя удалить последнего суперадминистратора" : "Нельзя удалить собственную учётную запись"}
+                                className="p-1.5 rounded-lg text-muted-foreground/40 cursor-not-allowed"
+                              >
+                                <Icon name="ShieldAlert" size={14} />
+                              </span>
+                            ) : (
+                              <button onClick={() => { setTargetUser(u); setUserModal("delete"); }} className="p-1.5 rounded-lg hover:bg-red-500/10 text-muted-foreground hover:text-red-400 transition-colors">
+                                <Icon name="Trash2" size={14} />
+                              </button>
+                            )}
                           </div>
                         )}
                       </td>
@@ -432,7 +452,7 @@ export default function UsersSection() {
         <UserModal user={null} onSave={d => { addUser(d); setUserModal(null); }} onClose={() => setUserModal(null)} />
       )}
       {userModal === "edit" && targetUser && (
-        <UserModal user={targetUser} onSave={d => { editUser(targetUser.id, d); setUserModal(null); }} onClose={() => setUserModal(null)} />
+        <UserModal user={targetUser} locked={isProtected(targetUser)} onSave={d => { editUser(targetUser.id, d); setUserModal(null); }} onClose={() => setUserModal(null)} />
       )}
       {userModal === "delete" && targetUser && (
         <ConfirmDelete label={targetUser.name} onConfirm={() => { deleteUser(targetUser.id); setUserModal(null); }} onClose={() => setUserModal(null)} />
