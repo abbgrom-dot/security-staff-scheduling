@@ -42,8 +42,8 @@ function RoleModal({ role, onSave, onClose }: {
   const valid = name.trim().length > 0;
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto" onClick={onClose}>
-      <div className="bg-card border border-border rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col min-w-0 section-enter" onClick={e => e.stopPropagation()}>
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-start justify-center p-4 pt-20" onClick={onClose}>
+      <div className="bg-card border border-border rounded-2xl w-full max-w-2xl max-h-[calc(100vh-6rem)] flex flex-col min-w-0 section-enter" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between p-4 sm:p-6 border-b border-border shrink-0">
           <h3 className="font-bold text-lg text-foreground">{role ? `Редактировать роль` : "Новая роль"}</h3>
           <button onClick={onClose} className="text-muted-foreground hover:text-foreground"><Icon name="X" size={20} /></button>
