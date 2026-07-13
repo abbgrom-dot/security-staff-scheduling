@@ -42,14 +42,14 @@ function RoleModal({ role, onSave, onClose }: {
   const valid = name.trim().length > 0;
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-card border border-border rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col section-enter" onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between p-6 border-b border-border shrink-0">
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto" onClick={onClose}>
+      <div className="bg-card border border-border rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col min-w-0 section-enter" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between p-4 sm:p-6 border-b border-border shrink-0">
           <h3 className="font-bold text-lg text-foreground">{role ? `Редактировать роль` : "Новая роль"}</h3>
           <button onClick={onClose} className="text-muted-foreground hover:text-foreground"><Icon name="X" size={20} /></button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-6 space-y-5">
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-5">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Field label="Название роли" required>
               <input value={name} onChange={e => setName(e.target.value)} placeholder="Старший диспетчер" className={inputCls} />
@@ -76,7 +76,7 @@ function RoleModal({ role, onSave, onClose }: {
                         <div className={`w-4 h-4 rounded flex items-center justify-center shrink-0 transition-colors ${perms.has(item.key) ? "bg-primary" : "bg-muted border border-border"}`}>
                           {perms.has(item.key) && <Icon name="Check" size={10} className="text-primary-foreground" />}
                         </div>
-                        {item.label}
+                        <span className="min-w-0 break-words">{item.label}</span>
                       </button>
                     ))}
                   </div>
@@ -86,7 +86,7 @@ function RoleModal({ role, onSave, onClose }: {
           </div>
         </div>
 
-        <div className="flex gap-3 p-6 border-t border-border shrink-0">
+        <div className="flex gap-3 p-4 sm:p-6 border-t border-border shrink-0">
           <button
             onClick={() => valid && onSave({ name, description: desc, permissions: Array.from(perms), orgId: role?.orgId ?? null, isSystem: false })}
             disabled={!valid}
