@@ -1,6 +1,7 @@
 import { useState } from "react";
 import Icon from "@/components/ui/icon";
 import { inputCls, Field } from "@/app/shared";
+import { useApp } from "@/context/AppContext";
 
 type EmpForm = Omit<import("@/types").Employee, "id" | "orgId">;
 
@@ -17,6 +18,7 @@ export function EmployeeModal({ initial, onSave, onClose, title }: {
   onClose: () => void;
   title: string;
 }) {
+  const { locations } = useApp();
   const [form, setForm] = useState<EmpForm>(initial ?? EMPTY_EMP);
   const set = <K extends keyof EmpForm>(k: K, v: EmpForm[K]) => setForm(f => ({ ...f, [k]: v }));
   const valid = form.name.trim().length > 0;
@@ -91,7 +93,10 @@ export function EmployeeModal({ initial, onSave, onClose, title }: {
               </select>
             </Field>
             <Field label="Текущий объект">
-              <input value={form.location} onChange={e => set("location", e.target.value)} placeholder="Объект А — Главный вход" className={inputCls} />
+              <select value={form.location} onChange={e => set("location", e.target.value)} className={inputCls}>
+                <option value="—">— Не привязан —</option>
+                {locations.map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
+              </select>
             </Field>
           </div>
 

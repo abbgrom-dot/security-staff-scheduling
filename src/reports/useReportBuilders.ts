@@ -118,7 +118,7 @@ export function useReportBuilders() {
 
     const rows = targetEmps.map(emp => {
       const empPosts = closedPosts.filter(p => p.officerId === emp.id);
-      const loc = locations.find(l => emp.location.startsWith(l.name));
+      const loc = locations.find(l => emp.location === l.name) ?? locations.find(l => emp.location.startsWith(l.name));
       const base = loc?.hourlyRate ?? 0;
       const bonus = emp.seniorityBonus;
       const totalRate = base + bonus;
@@ -233,4 +233,3 @@ export function useReportBuilders() {
 
   return { buildFinesData, buildConsolidatedData, buildShiftsData, buildEmployeeReport, buildLocationReport, today };
 }
-

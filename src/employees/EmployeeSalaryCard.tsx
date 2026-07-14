@@ -14,7 +14,7 @@ export default function EmployeeSalaryCard({ employee, locations, onEdit, onClos
 }) {
   const { posts, fines } = useApp();
 
-  const loc = locations.find(l => employee.location.startsWith(l.name));
+  const loc = locations.find(l => employee.location === l.name) ?? locations.find(l => employee.location.startsWith(l.name));
   const baseRate = loc?.hourlyRate ?? 0;
   const totalRate = baseRate + employee.seniorityBonus;
   const shiftHours = parseShiftHours(employee.shift);
@@ -331,4 +331,3 @@ export default function EmployeeSalaryCard({ employee, locations, onEdit, onClos
     </div>
   );
 }
-

@@ -230,16 +230,15 @@ export function AssignModal({ post, onAssign, onClose }: {
     .filter(e => {
       // Всегда показываем текущего назначенного
       if (e.id === post.officerId) return true;
-      // Скрываем активных — они уже на смене
-      if (e.status === "active") return false;
+      // Скрываем только тех, кто уже занят на другом посту
+      if (busyIds.has(e.id)) return false;
       // Поиск по имени/должности
       return !searchLower || e.name.toLowerCase().includes(searchLower) || e.rank.toLowerCase().includes(searchLower);
     })
-    .filter(e => !searchLower || e.id === post.officerId || e.name.toLowerCase().includes(searchLower) || e.rank.toLowerCase().includes(searchLower))
     .sort((a, b) => {
       const order = (e: typeof a) => {
         if (e.id === post.officerId) return 0;   // текущий — первым
-        if (e.status === "off" || e.status === "extra") return 1; // выходные/подработка
+        if (e.status === "active" || e.status === "off" || e.status === "extra") return 1; // свободные
         if (busyIds.has(e.id)) return 2;          // занятые на других постах
         if (e.status === "sick") return 3;         // больничный — в конце
         return 1;
@@ -304,7 +303,7 @@ export function AssignModal({ post, onAssign, onClose }: {
               <div className="py-6 text-center text-sm text-muted-foreground">
                 <Icon name="UserX" size={28} className="mx-auto mb-2 opacity-30" />
                 {searchLower ? "Никого не найдено" : "Нет доступных сотрудников"}
-                <p className="text-[10px] mt-1 text-muted-foreground/60">Сотрудники «На смене» уже задействованы</p>
+                <p className="text-[10px] mt-1 text-muted-foreground/60">Занятые на других постах сотрудники скрыты</p>
               </div>
             )}
 
@@ -353,10 +352,10 @@ export function AssignModal({ post, onAssign, onClose }: {
             })}
           </div>
 
-          {/* Подсказка: активные скрыты */}
+          {/* Подсказка: занятые скрыты */}
           {!searchLower && (
             <p className="text-[10px] text-muted-foreground/60 text-center">
-              Сотрудники со статусом «На смене» скрыты — они уже задействованы
+              Сотрудники, занятые на других постах, скрыты из списка
             </p>
           )}
 

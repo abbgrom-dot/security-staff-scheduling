@@ -28,7 +28,7 @@ export function Employees() {
   };
 
   const getEffectiveRate = (e: import("@/types").Employee) => {
-    const loc = locations.find(l => e.location.startsWith(l.name));
+    const loc = locations.find(l => e.location === l.name) ?? locations.find(l => e.location.startsWith(l.name));
     const base = loc?.hourlyRate ?? 0;
     return { base, bonus: e.seniorityBonus, total: base + e.seniorityBonus };
   };
@@ -361,4 +361,3 @@ export function Employees() {
     </div>
   );
 }
-
