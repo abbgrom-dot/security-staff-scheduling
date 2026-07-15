@@ -1,7 +1,7 @@
 import { createContext, useContext, useState, useEffect, type ReactNode } from "react";
 import type {
   Holding, Organization, Role, AppUser,
-  Location, Employee, Post, FineReason, FineRecord,
+  Location, Employee, Post, FineReason, FineRecord, ScheduleEntry,
   AuthSession, Permission,
 } from "@/types";
 import {
@@ -17,6 +17,7 @@ import {
   apiAssignPost, apiConfirmPost, apiClosePost,
   apiAddPost, apiEditPost, apiDeletePost,
   apiReplaceFineReasons, apiAddFine, apiEditHolding,
+  apiSetSchedule, apiDeleteSchedule,
   setApiUser,
 } from "@/lib/api";
 
@@ -82,6 +83,11 @@ interface AppContextValue {
 
   fines: FineRecord[];
 
+  // Schedule (график дежурств)
+  schedule: ScheduleEntry[];
+  setSchedule: (d: Omit<ScheduleEntry, "id" | "orgId">) => void;
+  removeSchedule: (employeeId: number, date: string) => void;
+
   // Global (all orgs) — for holding view
   allLocations: Location[];
   allEmployees: Employee[];
@@ -116,6 +122,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [allPosts, setAllPosts] = useState<Post[]>([]);
   const [allFineReasons, setAllFineReasons] = useState<FineReason[]>([]);
   const [allFines, setAllFines] = useState<FineRecord[]>([]);
+  const [allSchedule, setAllSchedule] = useState<ScheduleEntry[]>([]);
 
   // ── Initial load from API ──────────────────────────────────────────────────
   useEffect(() => {
@@ -132,6 +139,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setAllPosts(data.posts);
         setAllFineReasons(data.fineReasons);
         setAllFines(data.fines);
+        setAllSchedule(data.schedule ?? []);
       })
       .catch(err => { if (!cancelled) setLoadError(err.message || "Ошибка загрузки"); })
       .finally(() => { if (!cancelled) setLoading(false); });
@@ -258,6 +266,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const posts = allPosts.filter(p => p.orgId === currentOrgId);
   const fineReasons = allFineReasons.filter(r => r.orgId === currentOrgId);
   const fines = allFines.filter(f => f.orgId === currentOrgId);
+  const schedule = allSchedule.filter(s => s.orgId === currentOrgId);
 
   const addLocation = (d: Omit<Location, "id" | "orgId">) => {
     const postCount = Math.max(0, d.posts || 0);
@@ -429,6 +438,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
       .catch(console.error);
   };
 
+  // ── Schedule (график дежурств) ──────────────────────────────────────────────
+  const setSchedule = (d: Omit<ScheduleEntry, "id" | "orgId">) => {
+    apiSetSchedule({ orgId: currentOrgId, ...d })
+      .then(res => setAllSchedule(prev => {
+        // одна запись на сотрудника+дату — заменяем существующую
+        const rest = prev.filter(s => !(s.employeeId === res.item.employeeId && s.date === res.item.date));
+        return [...rest, res.item];
+      }))
+      .catch(console.error);
+  };
+  const removeSchedule = (employeeId: number, date: string) => {
+    setAllSchedule(prev => prev.filter(s => !(s.employeeId === employeeId && s.date === date)));
+    apiDeleteSchedule(employeeId, date).catch(console.error);
+  };
+
   const value: AppContextValue = {
     loading, loadError,
     session, login, logout, switchOrg, can, canAny, canAll, isSuperAdmin, superAdminCount,
@@ -440,6 +464,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     posts, assignPost, confirmPost, closePost, addPost, editPost, deletePost,
     fineReasons, setFineReasons,
     fines,
+    schedule, setSchedule, removeSchedule,
     allLocations, allEmployees, allPosts, allFines,
   };
 

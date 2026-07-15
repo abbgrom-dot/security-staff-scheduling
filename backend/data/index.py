@@ -48,6 +48,8 @@ REQUIRED_PERM = {
     ('employee', 'delete'): 'employees:edit',
     ('fineReasons', 'replace'): 'fines:edit',
     ('fine', 'add'): 'fines:edit',
+    ('schedule', 'set'): 'schedule:edit',
+    ('schedule', 'delete'): 'schedule:edit',
 }
 
 
@@ -183,6 +185,12 @@ def map_fine(r):
             'postId': r['post_id'], 'reasonId': r['reason_id'], 'note': r['note'], 'amount': r['amount']}
 
 
+def map_schedule(r):
+    return {'id': r['id'], 'orgId': r['org_id'], 'employeeId': r['employee_id'], 'date': r['date'],
+            'kind': r['kind'], 'locationId': r['location_id'], 'postId': r['post_id'],
+            'shift': r['shift'], 'note': r['note']}
+
+
 def load_all(cur):
     cur.execute("SELECT * FROM holdings ORDER BY id LIMIT 1")
     h = cur.fetchone()
@@ -204,9 +212,12 @@ def load_all(cur):
     fine_reasons = [map_fine_reason(r) for r in cur.fetchall()]
     cur.execute("SELECT * FROM fines ORDER BY id")
     fines = [map_fine(r) for r in cur.fetchall()]
+    cur.execute("SELECT * FROM schedule_entries ORDER BY id")
+    schedule = [map_schedule(r) for r in cur.fetchall()]
 
     return {'holding': holding, 'orgs': orgs, 'roles': roles, 'users': users, 'locations': locations,
-            'employees': employees, 'posts': posts, 'fineReasons': fine_reasons, 'fines': fines}
+            'employees': employees, 'posts': posts, 'fineReasons': fine_reasons, 'fines': fines,
+            'schedule': schedule}
 
 
 def handler(event: dict, context) -> dict:
@@ -447,5 +458,25 @@ def handle_mutation(cur, entity, action, d):
             (d['orgId'], d['date'], d.get('employeeId'), d.get('postId'), d.get('reasonId'),
              d.get('note', ''), d.get('amount', 0)))
         return {'item': map_fine(cur.fetchone())}
+
+    # ── Schedule (график дежурств: одна запись на сотрудника+дату) ─────────────
+    if entity == 'schedule':
+        if action == 'set':
+            cur.execute(
+                "INSERT INTO schedule_entries (org_id, employee_id, date, kind, location_id, post_id, shift, note) "
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s) "
+                "ON CONFLICT (employee_id, date) DO UPDATE SET "
+                "kind=EXCLUDED.kind, location_id=EXCLUDED.location_id, post_id=EXCLUDED.post_id, "
+                "shift=EXCLUDED.shift, note=EXCLUDED.note RETURNING *",
+                (d['orgId'], d['employeeId'], d['date'], d.get('kind', 'day'), d.get('locationId'),
+                 d.get('postId'), d.get('shift', '08:00 – 20:00'), d.get('note', '')))
+            return {'item': map_schedule(cur.fetchone())}
+        if action == 'delete':
+            if d.get('id') is not None:
+                cur.execute("DELETE FROM schedule_entries WHERE id=%s", (d['id'],))
+            else:
+                cur.execute("DELETE FROM schedule_entries WHERE employee_id=%s AND date=%s",
+                            (d['employeeId'], d['date']))
+            return {'ok': True}
 
     raise ValueError(f'Unknown entity/action: {entity}/{action}')

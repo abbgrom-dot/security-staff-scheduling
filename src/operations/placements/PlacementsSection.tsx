@@ -10,16 +10,31 @@ import { ConfirmPostModal } from "@/operations/placements/ConfirmPostModal";
 import { ClosePostModal } from "@/operations/placements/ClosePostModal";
 
 
+function todayIso() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 export function Placements() {
-  const { locations, posts, employees, assignPost, confirmPost, closePost, can, session } = useApp();
+  const { locations, posts, employees, schedule, assignPost, confirmPost, closePost, can, session } = useApp();
   const canEdit = can("placements:edit");
   const now = useNow(60_000); // обновляется каждую минуту
   const [assignPost2, setAssignPost2] = useState<Post | null>(null);
   const [confirmingPost, setConfirmingPost] = useState<Post | null>(null);
   const [closingPost, setClosingPost] = useState<Post | null>(null);
   const [fineSettings, setFineSettings] = useState(false);
+  const [planDate, setPlanDate] = useState(todayIso());
 
   const operatorName = session?.user.name ?? "Оператор";
+
+  // ── План по графику на выбранную дату ──────────────────────────────────────
+  const dayPlan = schedule.filter(s => s.date === planDate && s.kind !== "off");
+  // сотрудник, запланированный на конкретный пост
+  const plannedForPost = (postId: number, locationId: number) =>
+    dayPlan.find(s => s.postId === postId)
+    ?? dayPlan.find(s => s.locationId === locationId && s.postId === null);
+  // назначить сотрудника из графика на пост
+  const assignFromPlan = (postId: number, empId: number) => assignPost(postId, empId, null);
 
   // Автозакрытие смены по расписанию объекта
   useEffect(() => {
@@ -59,7 +74,18 @@ export function Placements() {
           <h2 className="text-2xl font-bold text-foreground">Расстановки</h2>
           <p className="text-muted-foreground text-sm mt-1">Назначение и подтверждение заступления на посты</p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
+          {/* Дата плана (из графика) */}
+          <div className="flex items-center gap-2 px-3 py-2 bg-card border border-border rounded-xl">
+            <Icon name="CalendarDays" size={15} className="text-primary" />
+            <input
+              type="date"
+              value={planDate}
+              onChange={e => setPlanDate(e.target.value)}
+              className="bg-transparent text-sm font-mono text-foreground focus:outline-none"
+            />
+            <span className="text-xs text-muted-foreground hidden sm:block">план по графику</span>
+          </div>
           {/* Живые часы */}
           <div className="flex items-center gap-2 px-3 py-2 bg-card border border-border rounded-xl">
             <span className="relative flex h-2 w-2">
@@ -123,6 +149,11 @@ export function Placements() {
                   const isConfirmed = post.confirmedAt !== null;
                   const isClosed = post.actualHours !== null;
 
+                  // По графику на выбранную дату
+                  const plan = plannedForPost(post.id, loc.id);
+                  const plannedEmp = plan ? employees.find(e => e.id === plan.employeeId) : undefined;
+                  const planMatches = plannedEmp && plannedEmp.id === post.officerId;
+
                   return (
                     <div
                       key={post.id}
@@ -149,6 +180,31 @@ export function Placements() {
 
                       {/* Schedule time */}
                       <p className="text-xs text-muted-foreground font-mono mb-2">{post.time}</p>
+
+                      {/* План по графику на выбранную дату */}
+                      {plannedEmp && !planMatches && !isClosed && (
+                        <div className="flex items-center gap-1.5 mb-2 px-2 py-1.5 rounded-lg bg-indigo-500/8 border border-indigo-500/20">
+                          <Icon name="CalendarClock" size={11} className="text-indigo-400 shrink-0" />
+                          <span className="text-[11px] text-indigo-300 truncate flex-1">
+                            По графику: {plannedEmp.name}
+                            {plan?.kind === "night" && " (ночь)"}
+                          </span>
+                          {canEdit && !isConfirmed && (
+                            <button
+                              onClick={() => assignFromPlan(post.id, plannedEmp.id)}
+                              className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300 hover:bg-indigo-500/30 shrink-0"
+                            >
+                              Назначить
+                            </button>
+                          )}
+                        </div>
+                      )}
+                      {plannedEmp && planMatches && (
+                        <div className="flex items-center gap-1.5 mb-2 text-[11px] text-emerald-400/80">
+                          <Icon name="CalendarCheck" size={11} className="shrink-0" />
+                          <span className="truncate">Совпадает с графиком</span>
+                        </div>
+                      )}
 
                       {/* Employee row */}
                       {emp ? (

@@ -1,6 +1,6 @@
 import type {
   Holding, Organization, Role, AppUser,
-  Location, Employee, Post, FineReason, FineRecord,
+  Location, Employee, Post, FineReason, FineRecord, ScheduleEntry,
 } from "@/types";
 
 const AUTH_URL = "https://functions.poehali.dev/bc06acd2-de7b-40ab-9289-ad071f198ef2";
@@ -21,6 +21,7 @@ export interface AllData {
   posts: Post[];
   fineReasons: FineReason[];
   fines: FineRecord[];
+  schedule: ScheduleEntry[];
 }
 
 export async function apiLogin(email: string, password: string): Promise<AppUser> {
@@ -118,3 +119,9 @@ export const apiReplaceFineReasons = (orgId: number, reasons: FineReason[]) =>
 
 // ── Fines ──
 export const apiAddFine = (d: Omit<FineRecord, "id">) => mutate<{ item: FineRecord }>({ entity: "fine", action: "add", data: d });
+
+// ── Schedule (график дежурств) ──
+export const apiSetSchedule = (d: Omit<ScheduleEntry, "id">) =>
+  mutate<{ item: ScheduleEntry }>({ entity: "schedule", action: "set", data: d });
+export const apiDeleteSchedule = (employeeId: number, date: string) =>
+  mutate({ entity: "schedule", action: "delete", data: { employeeId, date } });

@@ -150,6 +150,22 @@ export interface FineRecord {
   amount: number;
 }
 
+// ─── Schedule (график дежурств) ───────────────────────────────────────────────
+// Одна запись = план на конкретного сотрудника в конкретную дату.
+export type ScheduleKind = "day" | "night" | "off"; // дневная смена / ночная / выходной
+
+export interface ScheduleEntry {
+  id: number;
+  orgId: number;
+  employeeId: number;
+  date: string;                 // ISO date "YYYY-MM-DD"
+  kind: ScheduleKind;
+  locationId: number | null;    // объект (для смены)
+  postId: number | null;        // пост (для смены)
+  shift: string;                // "08:00 – 20:00"
+  note: string;
+}
+
 // ─── Auth Session ─────────────────────────────────────────────────────────────
 export interface AuthSession {
   user: AppUser;

@@ -34,6 +34,23 @@
       "expectedStatus": 403
     },
     {
+      "name": "Set schedule entry as superadmin",
+      "method": "POST",
+      "path": "/",
+      "headers": {"X-User-Id": "1"},
+      "body": {"entity": "schedule", "action": "set", "data": {"orgId": 1, "employeeId": 1, "date": "2026-07-20", "kind": "day", "locationId": 1, "postId": 1, "shift": "08:00 – 20:00"}},
+      "expectedStatus": 200,
+      "expectedBody": {"item": {"employeeId": 1, "kind": "day"}},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Set schedule without user forbidden",
+      "method": "POST",
+      "path": "/",
+      "body": {"entity": "schedule", "action": "set", "data": {"orgId": 1, "employeeId": 1, "date": "2026-07-21", "kind": "off"}},
+      "expectedStatus": 403
+    },
+    {
       "name": "Unknown entity error",
       "method": "POST",
       "path": "/",
