@@ -29,13 +29,6 @@ export default function LoginScreen() {
     }
   };
 
-  const demoUsers = [
-    { email: "admin@securgroup.ru",  label: "Суперадмин",           hint: "Все организации" },
-    { email: "orlova@og-center.ru",  label: "Директор (ОГ Центр)",   hint: "Только ОГ Центр" },
-    { email: "savin@og-center.ru",   label: "Диспетчер (ОГ Центр)",  hint: "Ограниченный доступ" },
-    { email: "karpova@og-sever.ru",  label: "Директор (ОГ Север)",   hint: "Только ОГ Север" },
-  ];
-
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
       <div className="w-full max-w-md">
@@ -59,7 +52,7 @@ export default function LoginScreen() {
                 type="email"
                 value={email}
                 onChange={e => setEmail(e.target.value)}
-                placeholder="admin@securgroup.ru"
+                placeholder="admin@admin.ru"
                 autoComplete="email"
                 className="w-full bg-muted border border-border rounded-xl px-4 py-2.5 text-sm text-foreground focus:outline-none focus:border-primary/60 transition-colors"
               />
@@ -70,7 +63,7 @@ export default function LoginScreen() {
                 type="password"
                 value={password}
                 onChange={e => setPassword(e.target.value)}
-                placeholder="demo1234"
+                placeholder="Введите пароль"
                 autoComplete="current-password"
                 className="w-full bg-muted border border-border rounded-xl px-4 py-2.5 text-sm text-foreground focus:outline-none focus:border-primary/60 transition-colors"
               />
@@ -93,28 +86,6 @@ export default function LoginScreen() {
           </form>
         </div>
 
-        {/* Demo hint */}
-        <div className="mt-4 bg-card border border-border rounded-2xl p-5">
-          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Демо-аккаунты (пароль — demo1234)</p>
-          <div className="space-y-2">
-            {demoUsers.map(d => (
-              <button
-                key={d.email}
-                onClick={() => { setEmail(d.email); setPassword("demo1234"); }}
-                className="w-full flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-muted/60 transition-colors text-left group"
-              >
-                <div className="w-7 h-7 rounded-full bg-primary/15 flex items-center justify-center shrink-0">
-                  <Icon name="User" size={13} className="text-primary" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-foreground truncate">{d.label}</p>
-                  <p className="text-xs text-muted-foreground truncate">{d.email}</p>
-                </div>
-                <span className="text-[10px] text-muted-foreground border border-border rounded px-1.5 py-0.5 hidden group-hover:block shrink-0">{d.hint}</span>
-              </button>
-            ))}
-          </div>
-        </div>
       </div>
     </div>
   );
