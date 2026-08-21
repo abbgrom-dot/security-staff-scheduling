@@ -5,9 +5,11 @@ import type {
 import { fmtDate } from "@/app/shared";
 
 export function useReportBuilders() {
-  const { fines, employees, posts, locations, fineReasons, currentOrg, holding, allLocations, allEmployees, allPosts, allFines, orgs } = useApp();
+  const { fines, employees, posts, locations, fineReasons, currentOrg, holding, allLocations, allEmployees, allPosts, allFines, orgs, schedule } = useApp();
 
   const today = new Date().toLocaleDateString("ru-RU");
+  const nowD = new Date();
+  const todayIso = `${nowD.getFullYear()}-${String(nowD.getMonth() + 1).padStart(2, "0")}-${String(nowD.getDate()).padStart(2, "0")}`;
 
   // ── Fines report data ─────────────────────────────────────────────────────
   const buildFinesData = (empFilter: number | "all" = "all"): FinesReportData => {
@@ -36,22 +38,40 @@ export function useReportBuilders() {
   };
 
   // ── Consolidated (holding) report data ────────────────────────────────────
-  const synth = (orgId: number, mi: number) => {
-    const seed = orgId * 13 + mi * 7;
-    return { coverage: 70 + ((seed * 3) % 28), attendance: 80 + ((seed * 5) % 18), incidents: seed % 4, finesAmt: (seed % 4) * (300 + (seed % 5) * 400), hoursWorked: ([8, 2, 1][orgId - 1] ?? 3) * 22 * 12 + (seed % 50) };
-  };
+  // Последние 6 месяцев от текущей даты
   const months = Array.from({ length: 6 }, (_, i) => {
-    const d = new Date(2026, 4 - (5 - i), 1);
+    const n = new Date();
+    const d = new Date(n.getFullYear(), n.getMonth() - (5 - i), 1);
     return { key: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`, label: d.toLocaleDateString("ru-RU", { month: "short", year: "2-digit" }) };
   });
 
+  // Реальные показатели организации за месяц (из базы)
+  const orgMonthStats = (orgId: number, monthKey: string) => {
+    const oPosts = allPosts.filter(p => p.orgId === orgId);
+    // Смены, закрытые в этом месяце
+    const closed = oPosts.filter(p => p.actualHours !== null && (p.closedAt ?? "").startsWith(monthKey));
+    const hoursWorked = closed.reduce((s, p) => s + (p.actualHours ?? 0), 0);
+    // Явка: подтверждённые из назначенных
+    const assigned = oPosts.filter(p => p.officerId !== null);
+    const confirmed = assigned.filter(p => p.confirmedAt !== null);
+    const attendance = assigned.length > 0 ? Math.round((confirmed.length / assigned.length) * 100) : 0;
+    // Покрытие постов
+    const coverage = oPosts.length > 0
+      ? Math.round((oPosts.filter(p => p.status === "covered").length / oPosts.length) * 100)
+      : 0;
+    // Штрафы = инциденты
+    const mFines = allFines.filter(f => f.orgId === orgId && f.date.startsWith(monthKey));
+    return {
+      coverage, attendance,
+      incidents: mFines.length,
+      finesAmt: mFines.reduce((s, f) => s + f.amount, 0),
+      hoursWorked,
+    };
+  };
+
   const buildConsolidatedData = (period: string): ExportReportData => {
     const summaryRows = orgs.map(org => {
-      const yearData = months.map((_, mi) => {
-        const d = synth(org.id, mi);
-        const realFines = allFines.filter(f => f.orgId === org.id && f.date.startsWith(months[mi].key));
-        return { ...d, finesAmt: realFines.length > 0 ? realFines.reduce((s, f) => s + f.amount, 0) : d.finesAmt, incidents: realFines.length > 0 ? realFines.length : d.incidents };
-      });
+      const yearData = months.map(m => orgMonthStats(org.id, m.key));
       const avgCov = Math.round(yearData.reduce((a, d) => a + d.coverage, 0) / yearData.length);
       const avgAtt = Math.round(yearData.reduce((a, d) => a + d.attendance, 0) / yearData.length);
       const totInc = yearData.reduce((a, d) => a + d.incidents, 0);
@@ -63,11 +83,7 @@ export function useReportBuilders() {
     const totalCoverage = Math.round(summaryRows.reduce((s, r) => s + r.coverage, 0) / Math.max(summaryRows.length, 1));
     const totalAttendance = Math.round(summaryRows.reduce((s, r) => s + r.attendance, 0) / Math.max(summaryRows.length, 1));
     const monthlyRows = orgs.map(org => {
-      const rows = months.map((m, mi) => {
-        const d = synth(org.id, mi);
-        const realFines = allFines.filter(f => f.orgId === org.id && f.date.startsWith(m.key));
-        return { coverage: d.coverage, attendance: d.attendance, incidents: realFines.length > 0 ? realFines.length : d.incidents, finesAmt: realFines.length > 0 ? realFines.reduce((s, f) => s + f.amount, 0) : d.finesAmt };
-      });
+      const rows = months.map(m => orgMonthStats(org.id, m.key));
       return { orgName: org.name, coverage: rows.map(r => r.coverage), attendance: rows.map(r => r.attendance), incidents: rows.map(r => r.incidents), finesAmt: rows.map(r => r.finesAmt) };
     });
     return {
@@ -82,11 +98,22 @@ export function useReportBuilders() {
 
   // ── Shifts summary (as fines-style with employees/posts) ──────────────────
   const buildShiftsData = (): FinesReportData => {
-    const activeEmps = employees.filter(e => e.status === "active");
-    const rows = activeEmps.map(e => {
-      const post = posts.find(p => p.officerId === e.id);
-      const loc = post ? locations.find(l => l.id === post.locationId) : null;
-      return { date: today, employeeName: e.name, rank: e.rank, postName: post?.name ?? "—", locationName: loc?.name ?? "—", reasonLabel: "На смене", note: e.shift, amount: 0 };
+    // Смены из графика на сегодня + фактически назначенные посты
+    const planned = schedule.filter(s => s.date === todayIso && s.kind !== "off");
+    const rows = planned.map(s => {
+      const e = employees.find(x => x.id === s.employeeId);
+      const post = s.postId ? posts.find(p => p.id === s.postId) : undefined;
+      const loc = locations.find(l => l.id === s.locationId);
+      return {
+        date: s.date,
+        employeeName: e?.name ?? "—",
+        rank: e?.rank ?? "—",
+        postName: post?.name ?? "—",
+        locationName: loc?.name ?? "—",
+        reasonLabel: s.isExtra ? "Подработка" : (s.kind === "night" ? "Ночная смена" : "Дневная смена"),
+        note: s.shift,
+        amount: 0,
+      };
     });
     return {
       orgName: currentOrg?.name ?? "—", orgColor: currentOrg?.color ?? "#6366f1",

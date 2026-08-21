@@ -188,7 +188,7 @@ def map_fine(r):
 def map_schedule(r):
     return {'id': r['id'], 'orgId': r['org_id'], 'employeeId': r['employee_id'], 'date': r['date'],
             'kind': r['kind'], 'locationId': r['location_id'], 'postId': r['post_id'],
-            'shift': r['shift'], 'note': r['note']}
+            'shift': r['shift'], 'note': r['note'], 'isExtra': r['is_extra']}
 
 
 def load_all(cur):
@@ -463,13 +463,13 @@ def handle_mutation(cur, entity, action, d):
     if entity == 'schedule':
         if action == 'set':
             cur.execute(
-                "INSERT INTO schedule_entries (org_id, employee_id, date, kind, location_id, post_id, shift, note) "
-                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s) "
+                "INSERT INTO schedule_entries (org_id, employee_id, date, kind, location_id, post_id, shift, note, is_extra) "
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s) "
                 "ON CONFLICT (employee_id, date) DO UPDATE SET "
                 "kind=EXCLUDED.kind, location_id=EXCLUDED.location_id, post_id=EXCLUDED.post_id, "
-                "shift=EXCLUDED.shift, note=EXCLUDED.note RETURNING *",
+                "shift=EXCLUDED.shift, note=EXCLUDED.note, is_extra=EXCLUDED.is_extra RETURNING *",
                 (d['orgId'], d['employeeId'], d['date'], d.get('kind', 'day'), d.get('locationId'),
-                 d.get('postId'), d.get('shift', '08:00 – 20:00'), d.get('note', '')))
+                 d.get('postId'), d.get('shift', '08:00 – 20:00'), d.get('note', ''), d.get('isExtra', False)))
             return {'item': map_schedule(cur.fetchone())}
         if action == 'delete':
             if d.get('id') is not None:

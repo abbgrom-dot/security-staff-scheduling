@@ -19,7 +19,9 @@ export function Dashboard() {
       <div className="relative rounded-2xl overflow-hidden border border-border p-8 grid-bg">
         <div className="absolute inset-0 bg-gradient-to-r from-background via-background/90 to-transparent" />
         <div className="relative z-10">
-          <p className="text-xs font-mono text-primary uppercase tracking-widest mb-2">06 мая 2026</p>
+          <p className="text-xs font-mono text-primary uppercase tracking-widest mb-2">
+            {new Date().toLocaleDateString("ru-RU", { day: "2-digit", month: "long", year: "numeric" })}
+          </p>
           <h1 className="text-3xl font-bold text-foreground mb-1">{currentOrg?.shortName ?? "SecureOps"}</h1>
           <p className="text-muted-foreground">{currentOrg?.name ?? "Система управления охраной"} · {locations.length} объектов</p>
         </div>
@@ -214,4 +216,3 @@ export function Dashboard() {
     </div>
   );
 }
-

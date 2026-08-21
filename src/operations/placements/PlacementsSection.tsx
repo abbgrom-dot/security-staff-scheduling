@@ -188,6 +188,8 @@ export function Placements() {
                           <span className="text-[11px] text-indigo-300 truncate flex-1">
                             По графику: {plannedEmp.name}
                             {plan?.kind === "night" && " (ночь)"}
+                            {plan && <span className="font-mono"> · {parseShiftHours(plan.shift)}ч</span>}
+                            {plan?.isExtra && <span className="text-purple-300"> · подработка</span>}
                           </span>
                           {canEdit && !isConfirmed && (
                             <button

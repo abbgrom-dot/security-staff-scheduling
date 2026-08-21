@@ -164,6 +164,7 @@ export interface ScheduleEntry {
   postId: number | null;        // пост (для смены)
   shift: string;                // "08:00 – 20:00"
   note: string;
+  isExtra: boolean;             // смена оформлена как подработка
 }
 
 // ─── Auth Session ─────────────────────────────────────────────────────────────

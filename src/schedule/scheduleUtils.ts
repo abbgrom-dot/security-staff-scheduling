@@ -21,3 +21,18 @@ export const KIND_META: Record<ScheduleKind, { label: string; dot: string; badge
   night: { label: "Ночная",  dot: "bg-indigo-500", badge: "bg-indigo-500/20 text-indigo-400 border-indigo-500/30", short: "Ноч", shift: "20:00 – 08:00" },
   off:   { label: "Выходной", dot: "bg-muted-foreground/40", badge: "bg-muted text-muted-foreground border-border", short: "Вых", shift: "Выходной" },
 };
+
+// Инициалы для аватара
+export function initials(name: string): string {
+  return name.split(" ").map(n => n[0]).join("").slice(0, 2);
+}
+
+// Продолжительность смены в часах из строки "08:00 – 20:00"
+export function shiftHours(shift: string): number {
+  const m = shift.match(/(\d{2}):(\d{2})\s*[–-]\s*(\d{2}):(\d{2})/);
+  if (!m) return 0;
+  const start = parseInt(m[1]) * 60 + parseInt(m[2]);
+  let end = parseInt(m[3]) * 60 + parseInt(m[4]);
+  if (end <= start) end += 24 * 60;
+  return (end - start) / 60;
+}
